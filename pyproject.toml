@@ -1,0 +1,37 @@
+[tool.poetry]
+name = "lotus"
+version = "0.1.0"
+description = ""
+authors = ["strongbugman <strongbugman@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+classifiers=[
+    "Environment :: Console",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+packages = [
+    { include = "lotus" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.7"
+aio-pika = "^8.0.3"
+aioredis = "^2.0.1"
+async-timeout = "^4.0.2"
+
+[tool.poetry.dev-dependencies]
+pytest = "^4.6"
+pytest-asyncio = ">=0.8.0"
+pytest-cov = ">=2.5.1"
+mypy = "^0.910"
+flake8 = "^3.9.2"
+isort = "^5.9.2"
+black = "^21.8b0"
+mkdocs-material = "^8.2.3"
+codecov = "^2.1.12"
+click = "8.0.*"
