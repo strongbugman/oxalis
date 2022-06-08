@@ -4,7 +4,7 @@ import asyncio
 from aioredis import Redis
 import pytest
 
-from lotus.base import Lotus, RedisLotus, Pool, FanOutQueue
+from oxalis.redis import App, PubsubQueue
 
 
 redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
@@ -17,18 +17,18 @@ async def _redis():
 
 @pytest.mark.asyncio
 async def test_redis():
-    lotus = RedisLotus(redis, pool=Pool())
-    fanout_queue = FanOutQueue("fanout")
+    app = App(redis)
+    fanout_queue = PubsubQueue("fanout")
     x = 1
     y = 1
 
-    @lotus.register()
+    @app.register()
     def task():
         nonlocal x
         x = 2
         return 1
 
-    @lotus.register(queue=fanout_queue)
+    @app.register(queue=fanout_queue)
     def task2():
         nonlocal y
         y = 2
@@ -36,17 +36,15 @@ async def test_redis():
     
     async def close():
         await asyncio.sleep(1)
-        lotus.close_worker()
+        app.close_worker()
 
     asyncio.ensure_future(close())
 
-    await lotus.send_task(task)
-    lotus.running = True
-    lotus.on_worker_init()
-    asyncio.ensure_future(lotus._receive_fanout_message())
-    asyncio.ensure_future(lotus._receive_message())
+    await app.send_task(task)
+    app.running = True
+    app._run_worker()
     await asyncio.sleep(0.3)
-    await lotus.send_task(task2)
-    await lotus._run_worker()
+    await app.send_task(task2)
+    await app.loop()
     assert x == 2
     assert y == 2

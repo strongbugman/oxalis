@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "lotus"
+name = "oxalis"
 version = "0.1.0"
 description = ""
 authors = ["strongbugman <strongbugman@gmail.com>"]
@@ -15,7 +15,7 @@ classifiers=[
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 packages = [
-    { include = "lotus" },
+    { include = "oxalis" },
 ]
 
 [tool.poetry.dependencies]
