@@ -18,6 +18,7 @@ async def _redis():
 @pytest.mark.asyncio
 async def test_redis():
     app = App(redis)
+    await app.connect()
     fanout_queue = PubsubQueue("fanout")
     x = 1
     y = 1
@@ -45,6 +46,6 @@ async def test_redis():
     app._run_worker()
     await asyncio.sleep(0.3)
     await app.send_task(task2)
-    await app.loop()
+    await app.worker_loop()
     assert x == 2
     assert y == 2

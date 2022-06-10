@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import typing as tp
 import asyncio
 import abc
@@ -17,7 +19,8 @@ from .pool import Pool
 
 
 class Task:
-    def __init__(self, func: tp.Callable, name="") -> None:
+    def __init__(self, app: App, func: tp.Callable, name="") -> None:
+        self.app = app
         self.func = func
         self.name = name or self.get_name()
 
@@ -30,6 +33,9 @@ class Task:
             ret = await ret
 
         return ret
+    
+    async def delay(self, *args, **kwargs):
+        await self.app.send_task(self, *args, **kwargs)
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -95,13 +101,13 @@ class App(abc.ABC):
         self.on_worker_init()
         asyncio.get_event_loop().run_until_complete(self.connect())
         self._run_worker()
-        asyncio.get_event_loop().run_until_complete(self.loop())
+        asyncio.get_event_loop().run_until_complete(self.worker_loop())
     
     @abc.abstractmethod
     def _run_worker(self):
         pass
 
-    async def loop(self):
+    async def worker_loop(self):
         while self.running:
             await asyncio.sleep(0.5)
         await self.pool.close()
@@ -115,7 +121,7 @@ class App(abc.ABC):
 
     def register(self, task_name: str = "", **kwargs) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(func, name=task_name)
+            task = Task(self, func, name=task_name)
             if task.name in self.tasks:
                 raise ValueError("double task, check task name")
             self.tasks[task.name] = task
@@ -123,14 +129,14 @@ class App(abc.ABC):
 
         return wrapped
     
-    async def on_message_receive(self, content: bytes):
+    async def on_message_receive(self, content: bytes, *args):
         if not content:
             return
         task_name, task_args, task_kwargs = self.task_codec.decode(content)
         if task_name not in self.tasks:
             logger.exception(f"Task {task_name} not found")
         else:
-            await self.pool.spawn(self.exec_task(self.tasks[task_name], *task_args, **task_kwargs), block=True)
+            await self.pool.spawn(self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs), block=True)
     
     def on_signal(self, *args):
         self._on_close_signal_count += 1

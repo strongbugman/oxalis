@@ -29,6 +29,13 @@ class App(_App):
         self.queues: tp.Dict[str, Queue] = {}
         self.default_queue = Queue("default")
     
+    async def connect(self):
+        if not self.client.initialized:
+            await self.client.initialize()
+    
+    async def disconnect(self):
+        await self.client.close()
+    
     async def send_task(self, task: Task, *task_args, **task_kwargs):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
@@ -42,7 +49,7 @@ class App(_App):
 
     def register(self, task_name: str = "", queue: tp.Optional[Queue] = None, **kwargs) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(func, name=task_name)
+            task = Task(self, func, name=task_name)
             if task.name in self.tasks:
                 raise ValueError("double task, check task name")
             self.tasks[task.name] = task

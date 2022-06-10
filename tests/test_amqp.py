@@ -1,9 +1,8 @@
-import os
 import asyncio
 
 import pytest
 
-from oxalis.amqp import App
+from oxalis.amqp import App, Exchange, Queue
 
 
 
@@ -11,10 +10,10 @@ from oxalis.amqp import App
 async def test_amqp():
     app = App("amqp://root:letmein@rabbitmq:5672/")
     await app.connect()
-    async with app.connection.channel() as channel:
-        q = await channel.declare_queue("test_queue")
-        e = await channel.declare_exchange("test_change")
-        await q.bind(e, routing_key="test")
+    e = Exchange("test_exchange")
+    q = Queue("test_queue")
+    app.register_queues([q])
+    app.register_binding(q, e, "test")
 
     x = 1
     y = 1
@@ -25,7 +24,7 @@ async def test_amqp():
         x = 2
         return 1
 
-    @app.register(queue=q, exchange=e, routing_key="test")
+    @app.register(queue=q, exchange=e, routing_key="test", ack_later=True)
     def task2():
         nonlocal y
         y = 2
@@ -43,6 +42,6 @@ async def test_amqp():
     app._run_worker()
     await asyncio.sleep(0.3)
     await app.send_task(task2)
-    await app.loop()
+    await app.worker_loop()
     assert x == 2
     assert y == 2
