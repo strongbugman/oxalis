@@ -124,13 +124,14 @@ class Oxalis(_Oxalis):
     def register(
         self,
         task_name: str = "",
+        timeout: float = -1,
         exchange: tp.Optional[aio_pika.abc.AbstractExchange] = None,
         routing_key: str = "",
-        ack_later=False,
+        ack_later: bool = False,
         **_,
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(self, func, name=task_name)
+            task = Task(self, func, name=task_name, timeout=timeout)
             if task.name in self.tasks:
                 raise ValueError("double task, check task name")
             self.tasks[task.name] = task

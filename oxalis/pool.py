@@ -18,14 +18,17 @@ class Pool:
         self.running_count = 0
         self.running = True
 
-    async def spawn(self, coroutine: tp.Awaitable, block: bool = False):
+    async def spawn(
+        self, coroutine: tp.Awaitable, block: bool = False, timeout: float = -1
+    ):
         if not self.running:
             raise RuntimeError("This pool has been closed")
 
+        timeout = timeout if timeout >= 0 else self.timeout
         while True:
             if self.limit == -1 or self.running_count < self.limit:
                 self.running_count += 1
-                f = asyncio.ensure_future(self.run_coroutine(coroutine))
+                f = asyncio.ensure_future(self.run_coroutine(coroutine, timeout))
                 f.add_done_callback(self.on_future_done)
                 self.futures.add(f)
                 break
@@ -35,8 +38,8 @@ class Pool:
             else:
                 await self.done_queue.get()
 
-    async def run_coroutine(self, coroutine: tp.Awaitable):
-        async with async_timeout.timeout(self.timeout):
+    async def run_coroutine(self, coroutine: tp.Awaitable, timeout: float = -1):
+        async with async_timeout.timeout(timeout):
             await coroutine
 
     @property

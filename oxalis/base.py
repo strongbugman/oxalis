@@ -17,10 +17,13 @@ logger = logging.getLogger("oxalis")
 
 
 class Task:
-    def __init__(self, oxalis: Oxalis, func: tp.Callable, name="") -> None:
+    def __init__(
+        self, oxalis: Oxalis, func: tp.Callable, name="", timeout: float = 10 * 60
+    ) -> None:
         self.oxalis = oxalis
         self.func = func
         self.name = name or self.get_name()
+        self.timeout = timeout
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.name})>"
@@ -32,8 +35,11 @@ class Task:
 
         return ret
 
-    async def delay(self, *args, **kwargs):
-        await self.oxalis.send_task(self, *args, **kwargs)
+    async def delay(self, *args, **kwargs) -> tp.Any:
+        if self.oxalis.test:
+            return await self(*args, **kwargs)
+        else:
+            await self.oxalis.send_task(self, *args, **kwargs)
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -63,12 +69,14 @@ class Oxalis(abc.ABC):
         pool: Pool = Pool(),
         timeout: float = 5.0,
         worker_num: int = 0,
+        test: bool = False,
     ) -> None:
         self.tasks: tp.Dict[str, Task] = {}
         self.task_codec = task_codec
         self.pool = pool
         self.running = False
         self.timeout = timeout
+        self.test = test
         self._on_close_signal_count = 0
         self.worker_num = worker_num or os.cpu_count()
 
@@ -123,9 +131,11 @@ class Oxalis(abc.ABC):
         if force:
             sys.exit()
 
-    def register(self, task_name: str = "", **_) -> tp.Callable[[tp.Callable], Task]:
+    def register(
+        self, task_name: str = "", timeout: float = -1, **_
+    ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(self, func, name=task_name)
+            task = Task(self, func, name=task_name, timeout=timeout)
             if task.name in self.tasks:
                 raise ValueError("double task, check task name")
             self.tasks[task.name] = task
@@ -146,6 +156,7 @@ class Oxalis(abc.ABC):
             await self.pool.spawn(
                 self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
                 block=True,
+                timeout=self.tasks[task_name].timeout,
             )
 
     def close(self, *_):

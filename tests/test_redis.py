@@ -48,3 +48,6 @@ async def test_redis():
     await app.work()
     assert x == 2
     assert y == 2
+
+    app.test = True
+    assert await task.delay() == 1

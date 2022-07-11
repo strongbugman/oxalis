@@ -52,10 +52,14 @@ class Oxalis(_Oxalis):
             await self.client.rpush(queue.name, content)
 
     def register(
-        self, task_name: str = "", queue: tp.Optional[Queue] = None, **_
+        self,
+        task_name: str = "",
+        timeout: float = -1,
+        queue: tp.Optional[Queue] = None,
+        **_,
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(self, func, name=task_name)
+            task = Task(self, func, name=task_name, timeout=timeout)
             if task.name in self.tasks:
                 raise ValueError("double task, check task name")
             self.tasks[task.name] = task
