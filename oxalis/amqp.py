@@ -72,7 +72,7 @@ class App(_App):
             routing_key=routing_key
         )
 
-    def register(self, task_name: str = "", exchange: tp.Optional[aio_pika.abc.AbstractExchange] = None, routing_key: str = "", ack_later=False, **kwargs) -> tp.Callable[[tp.Callable], Task]:
+    def register(self, task_name: str = "", exchange: tp.Optional[aio_pika.abc.AbstractExchange] = None, routing_key: str = "", ack_later=False, **_) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
             task = Task(self, func, name=task_name)
             if task.name in self.tasks:

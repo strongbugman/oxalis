@@ -5,6 +5,7 @@ from aioredis import Redis
 import pytest
 
 from oxalis.redis import App, PubsubQueue
+from oxalis.beater import Beater
 
 
 redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
@@ -46,6 +47,6 @@ async def test_redis():
     app._run_worker()
     await asyncio.sleep(0.3)
     await app.send_task(task2)
-    await app.worker_loop()
+    await app.work()
     assert x == 2
     assert y == 2

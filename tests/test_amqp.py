@@ -9,7 +9,6 @@ from oxalis.amqp import App, Exchange, Queue
 @pytest.mark.asyncio
 async def test_amqp():
     app = App("amqp://root:letmein@rabbitmq:5672/")
-    await app.connect()
     e = Exchange("test_exchange")
     q = Queue("test_queue")
     app.register_queues([q])
@@ -35,6 +34,7 @@ async def test_amqp():
         app.close_worker()
 
     asyncio.ensure_future(close())
+    await app.connect()
 
     await app.send_task(task)
     app.running = True
@@ -42,6 +42,6 @@ async def test_amqp():
     app._run_worker()
     await asyncio.sleep(0.3)
     await app.send_task(task2)
-    await app.worker_loop()
+    await app.work()
     assert x == 2
     assert y == 2

@@ -1,5 +1,6 @@
 # from oxalis.redis import App, Pool, FanOutQueue
-from oxalis.amqp import App, Exchange, Queue, ExchangeType
+import time
+from oxalis.amqp import App, Pool, Exchange, Queue, ExchangeType
 from oxalis.cli import run_worker
 # from aioredis import Redis
 import asyncio
@@ -18,29 +19,29 @@ q2 = Queue("testfanout")
 q22 = Queue("testfanout2")
 
 
-app = App("amqp://root:letmein@rabbitmq:5672/")
+app = App("amqp://root:letmein@rabbitmq:5672/", pool=Pool(limit=10, timeout=5))
 app.register_binding(q, e, "test")
 app.register_binding(q2, e2, "")
 app.register_binding(q22, e2, "")
-app.register_queues([q])
+app.register_queues([q, q2])
 
 
 @app.register(task_name="hello", exchange=e, routing_key="test", ack_later=True)
 async def hello():
-    print("hello")
+    print("hello", time.time())
     await asyncio.sleep(1)
     # raise ValueError()
 
 
 @app.register(task_name="hello2", exchange=e2, routing_key="test")
 async def hello2():
-    print("hello2")
+    print("hello2", time.time())
     await asyncio.sleep(1)
 
 
 @app.register(task_name="hello3", exchange=e2, routing_key="test")
 async def hello3():
-    print("hello3")
+    print("hello3", time.time())
     await asyncio.sleep(1)
 
 

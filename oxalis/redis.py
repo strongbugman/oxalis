@@ -30,8 +30,7 @@ class App(_App):
         self.default_queue = Queue("default")
     
     async def connect(self):
-        if not self.client.initialized:
-            await self.client.initialize()
+        await self.client.initialize()
     
     async def disconnect(self):
         await self.client.close()

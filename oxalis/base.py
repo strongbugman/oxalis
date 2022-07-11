@@ -86,8 +86,8 @@ class App(abc.ABC):
         await task(*task_args, **task_kwargs)
 
     def run_worker_master(self):
-        signal.signal(signal.SIGINT, self.on_signal)
-        signal.signal(signal.SIGTERM, self.on_signal)
+        signal.signal(signal.SIGINT, self.close)
+        signal.signal(signal.SIGTERM, self.close)
         ps = []
         for _ in range(4):
             ps.append(multiprocessing.Process(target=self.run_worker))
@@ -101,13 +101,13 @@ class App(abc.ABC):
         self.on_worker_init()
         asyncio.get_event_loop().run_until_complete(self.connect())
         self._run_worker()
-        asyncio.get_event_loop().run_until_complete(self.worker_loop())
+        asyncio.get_event_loop().run_until_complete(self.work())
     
     @abc.abstractmethod
     def _run_worker(self):
         pass
 
-    async def worker_loop(self):
+    async def work(self):
         while self.running:
             await asyncio.sleep(0.5)
         await self.pool.close()
@@ -138,7 +138,7 @@ class App(abc.ABC):
         else:
             await self.pool.spawn(self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs), block=True)
     
-    def on_signal(self, *args):
+    def close(self, *_):
         self._on_close_signal_count += 1
         self.close_worker(force=self._on_close_signal_count >= 2)
 
