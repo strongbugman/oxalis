@@ -2,13 +2,12 @@ import asyncio
 
 import pytest
 
-from oxalis.amqp import App, Exchange, Queue
-
+from oxalis.amqp import Exchange, Oxalis, Queue
 
 
 @pytest.mark.asyncio
 async def test_amqp():
-    app = App("amqp://root:letmein@rabbitmq:5672/")
+    app = Oxalis("amqp://root:letmein@rabbitmq:5672/")
     e = Exchange("test_exchange")
     q = Queue("test_queue")
     app.register_queues([q])
@@ -28,7 +27,7 @@ async def test_amqp():
         nonlocal y
         y = 2
         return 1
-    
+
     async def close():
         await asyncio.sleep(1)
         app.close_worker()

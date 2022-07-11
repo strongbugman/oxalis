@@ -1,9 +1,10 @@
-import typing as tp
 import asyncio
+import typing as tp
 
 from aioredis.client import Redis
 
-from .base import App as _App, TaskCodec, Task, logger
+from .base import Oxalis as _Oxalis
+from .base import Task, TaskCodec, logger
 from .pool import Pool
 
 
@@ -18,23 +19,27 @@ class PubsubQueue(Queue):
     pass
 
 
-
-class App(_App):
+class Oxalis(_Oxalis):
     def __init__(
-        self, client: Redis, task_codec: TaskCodec = TaskCodec(), pool: Pool = Pool()
+        self,
+        client: Redis,
+        task_codec: TaskCodec = TaskCodec(),
+        pool: Pool = Pool(),
+        timeout: float = 0.5,
+        default_queue_name: str = "default",
     ) -> None:
-        super().__init__(task_codec=task_codec, pool=pool)
+        super().__init__(task_codec=task_codec, pool=pool, timeout=timeout)
         self.client = client
         self.pubsub = client.pubsub()
         self.queues: tp.Dict[str, Queue] = {}
-        self.default_queue = Queue("default")
-    
+        self.default_queue = Queue(default_queue_name)
+
     async def connect(self):
         await self.client.initialize()
-    
+
     async def disconnect(self):
         await self.client.close()
-    
+
     async def send_task(self, task: Task, *task_args, **task_kwargs):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
@@ -46,7 +51,9 @@ class App(_App):
         else:
             await self.client.rpush(queue.name, content)
 
-    def register(self, task_name: str = "", queue: tp.Optional[Queue] = None, **kwargs) -> tp.Callable[[tp.Callable], Task]:
+    def register(
+        self, task_name: str = "", queue: tp.Optional[Queue] = None, **_
+    ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
             task = Task(self, func, name=task_name)
             if task.name in self.tasks:
@@ -57,21 +64,36 @@ class App(_App):
 
         return wrapped
 
-    async def _receive_message(self, timeout: tp.Union[int, float] = 0.5):
+    async def _receive_message(self):
         while self.running:
             content = await self.client.blpop(
-                list({q.name for q in self.queues.values() if not isinstance(q, PubsubQueue)}), timeout=timeout
+                list(
+                    {
+                        q.name
+                        for q in self.queues.values()
+                        if not isinstance(q, PubsubQueue)
+                    }
+                ),
+                timeout=self.timeout,
             )
             if not content:
                 continue
             else:
                 await self.on_message_receive(content[1])
-    
-    async def _receive_pubsub_message(self, timeout: tp.Union[int, float]=0.5):
+
+    async def _receive_pubsub_message(self):
         while self.running:
             if not self.pubsub.subscribed:
-                await self.pubsub.subscribe(*{q.name for q in self.queues.values() if isinstance(q, PubsubQueue)})
-            content = await self.pubsub.get_message(ignore_subscribe_messages=True, timeout=timeout)
+                await self.pubsub.subscribe(
+                    *{
+                        q.name
+                        for q in self.queues.values()
+                        if isinstance(q, PubsubQueue)
+                    }
+                )
+            content = await self.pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=self.timeout
+            )
             if not content:
                 continue
             else:

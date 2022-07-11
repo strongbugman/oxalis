@@ -1,12 +1,10 @@
-import os
 import asyncio
+import os
 
-from aioredis import Redis
 import pytest
+from aioredis import Redis
 
-from oxalis.redis import App, PubsubQueue
-from oxalis.beater import Beater
-
+from oxalis.redis import Oxalis, PubsubQueue
 
 redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
 
@@ -18,7 +16,7 @@ async def _redis():
 
 @pytest.mark.asyncio
 async def test_redis():
-    app = App(redis)
+    app = Oxalis(redis)
     await app.connect()
     fanout_queue = PubsubQueue("fanout")
     x = 1
@@ -35,7 +33,7 @@ async def test_redis():
         nonlocal y
         y = 2
         return 1
-    
+
     async def close():
         await asyncio.sleep(1)
         app.close_worker()

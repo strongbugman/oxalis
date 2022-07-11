@@ -1,26 +1,24 @@
 from __future__ import annotations
 
-import typing as tp
-import asyncio
 import abc
+import asyncio
 import inspect
 import json
-import os
-import sys
-import multiprocessing
-import signal
 import logging
+import multiprocessing
+import os
+import signal
+import sys
+import typing as tp
 
+from .pool import Pool
 
 logger = logging.getLogger("oxalis")
 
 
-from .pool import Pool
-
-
 class Task:
-    def __init__(self, app: App, func: tp.Callable, name="") -> None:
-        self.app = app
+    def __init__(self, oxalis: Oxalis, func: tp.Callable, name="") -> None:
+        self.oxalis = oxalis
         self.func = func
         self.name = name or self.get_name()
 
@@ -33,9 +31,9 @@ class Task:
             ret = await ret
 
         return ret
-    
+
     async def delay(self, *args, **kwargs):
-        await self.app.send_task(self, *args, **kwargs)
+        await self.oxalis.send_task(self, *args, **kwargs)
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -58,15 +56,21 @@ class TaskCodec:
         return json.loads(content)
 
 
-class App(abc.ABC):
+class Oxalis(abc.ABC):
     def __init__(
-        self, task_codec: TaskCodec = TaskCodec(), pool: Pool = Pool()
+        self,
+        task_codec: TaskCodec = TaskCodec(),
+        pool: Pool = Pool(),
+        timeout: float = 5.0,
+        worker_num: int = 0,
     ) -> None:
         self.tasks: tp.Dict[str, Task] = {}
         self.task_codec = task_codec
         self.pool = pool
         self.running = False
+        self.timeout = timeout
         self._on_close_signal_count = 0
+        self.worker_num = worker_num or os.cpu_count()
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
@@ -89,7 +93,7 @@ class App(abc.ABC):
         signal.signal(signal.SIGINT, self.close)
         signal.signal(signal.SIGTERM, self.close)
         ps = []
-        for _ in range(4):
+        for _ in range(self.worker_num):
             ps.append(multiprocessing.Process(target=self.run_worker))
             ps[-1].start()
         for p in ps:
@@ -102,14 +106,14 @@ class App(abc.ABC):
         asyncio.get_event_loop().run_until_complete(self.connect())
         self._run_worker()
         asyncio.get_event_loop().run_until_complete(self.work())
-    
+
     @abc.abstractmethod
     def _run_worker(self):
         pass
 
     async def work(self):
         while self.running:
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self.timeout)
         await self.pool.close()
         await self.disconnect()
 
@@ -119,7 +123,7 @@ class App(abc.ABC):
         if force:
             sys.exit()
 
-    def register(self, task_name: str = "", **kwargs) -> tp.Callable[[tp.Callable], Task]:
+    def register(self, task_name: str = "", **_) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
             task = Task(self, func, name=task_name)
             if task.name in self.tasks:
@@ -128,16 +132,22 @@ class App(abc.ABC):
             return task
 
         return wrapped
-    
+
     async def on_message_receive(self, content: bytes, *args):
-        if not content:
+        try:
+            task_name, task_args, task_kwargs = self.task_codec.decode(content)
+        except Exception as e:
+            logger.exception(e)
             return
-        task_name, task_args, task_kwargs = self.task_codec.decode(content)
+
         if task_name not in self.tasks:
-            logger.exception(f"Task {task_name} not found")
+            logger.warning(f"Received task {task_name} not found")
         else:
-            await self.pool.spawn(self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs), block=True)
-    
+            await self.pool.spawn(
+                self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
+                block=True,
+            )
+
     def close(self, *_):
         self._on_close_signal_count += 1
         self.close_worker(force=self._on_close_signal_count >= 2)

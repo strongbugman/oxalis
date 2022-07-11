@@ -1,18 +1,15 @@
-import typing as tp
 import asyncio
-from asyncio.queues import Queue, QueueEmpty
 import logging
+import typing as tp
+from asyncio.queues import Queue, QueueEmpty
+
 import async_timeout
 
 logger = logging.getLogger("lotus")
 
 
 class Pool:
-    def __init__(
-        self,
-        limit: int = 100,
-        timeout: tp.Union[int, float] = 5 * 60
-    ):
+    def __init__(self, limit: int = 100, timeout: tp.Union[int, float] = 5 * 60):
         self.limit = limit
         self.timeout = timeout
         self.pending_queue: Queue = Queue()
@@ -37,32 +34,32 @@ class Pool:
                 break
             else:
                 await self.done_queue.get()
-    
+
     async def run_coroutine(self, coroutine: tp.Awaitable):
         async with async_timeout.timeout(self.timeout):
             await coroutine
 
     @property
     def done(self) -> bool:
-        return not (
-            self.running_count or self.done_queue.qsize() or self.pending_queue.qsize()
-        )
+        return not (self.running_count and self.pending_queue.qsize())
 
     async def wait_done(self):
         while not self.done:
             await self.done_queue.get()
 
     async def close(self, force=False):
-        # TODO: 并发冲突
         self.running = False
+        if force:
+            for f in self.futures:
+                f.cancel()
         await self.wait_done()
-    
+
     def check_future(self, f: asyncio.Future):
         e = f.exception()
         if e:
             try:
                 raise e
-            except:
+            except Exception:
                 logger.exception(e)
 
     def on_future_done(self, f: asyncio.Future):
