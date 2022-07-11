@@ -55,7 +55,7 @@ class Pool:
 
     @property
     def done(self) -> bool:
-        return not (self.running_count and self.pending_queue.qsize())
+        return not (self.running_count or self.pending_queue.qsize())
 
     async def wait_done(self):
         while not self.done:
