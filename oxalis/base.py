@@ -153,9 +153,8 @@ class Oxalis(abc.ABC):
         if task_name not in self.tasks:
             logger.warning(f"Received task {task_name} not found")
         else:
-            await self.pool.spawn(
+            await self.pool.block_spawn(
                 self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
-                block=True,
                 timeout=self.tasks[task_name].timeout,
             )
 

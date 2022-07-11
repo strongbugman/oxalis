@@ -18,9 +18,9 @@ class Pool:
         self.running_count = 0
         self.running = True
 
-    async def spawn(
-        self, coroutine: tp.Awaitable, block: bool = False, timeout: float = -1
-    ):
+    def spawn(
+        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
+    ) -> bool:
         if not self.running:
             raise RuntimeError("This pool has been closed")
 
@@ -32,11 +32,22 @@ class Pool:
                 f.add_done_callback(self.on_future_done)
                 self.futures.add(f)
                 break
-            elif not block:
+            elif pending:
                 self.pending_queue.put_nowait(coroutine)
                 break
             else:
+                return False
+
+        return True
+
+    async def block_spawn(self, coroutine: tp.Awaitable, timeout: float = -1) -> bool:
+        while True:
+            if self.spawn(coroutine, pending=False, timeout=timeout):
+                break
+            else:
                 await self.done_queue.get()
+
+        return True
 
     async def run_coroutine(self, coroutine: tp.Awaitable, timeout: float = -1):
         async with async_timeout.timeout(timeout):
