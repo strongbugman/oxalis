@@ -68,12 +68,20 @@ class Oxalis(_Oxalis):
         url: str,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
-        timeout: float = 0.5,
+        timeout: float = 5.0,
+        worker_num: int = 0,
+        test: bool = False,
         default_queue_name="default",
         default_exchange_name="default",
         default_routing_key="default",
     ) -> None:
-        super().__init__(task_codec=task_codec, pool=pool, timeout=timeout)
+        super().__init__(
+            task_codec=task_codec,
+            pool=pool,
+            timeout=timeout,
+            worker_num=worker_num,
+            test=test,
+        )
         self.url = url
         self.ack_later_tasks: tp.Set[str] = set()
         self.default_exchange = Exchange(default_exchange_name)

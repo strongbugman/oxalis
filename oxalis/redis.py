@@ -25,10 +25,18 @@ class Oxalis(_Oxalis):
         client: Redis,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
-        timeout: float = 0.5,
+        timeout: float = 5.0,
+        worker_num: int = 0,
+        test: bool = False,
         default_queue_name: str = "default",
     ) -> None:
-        super().__init__(task_codec=task_codec, pool=pool, timeout=timeout)
+        super().__init__(
+            task_codec=task_codec,
+            pool=pool,
+            timeout=timeout,
+            worker_num=worker_num,
+            test=test,
+        )
         self.client = client
         self.pubsub = client.pubsub()
         self.queues: tp.Dict[str, Queue] = {}

@@ -45,7 +45,7 @@ class Beater:
         signal.signal(signal.SIGTERM, self.close)
         asyncio.get_event_loop().run_until_complete(self.oxalis.connect())
         for i in range(len(self.tasks)):
-            logger.info(f"Beat task: {self.tasks[i]} at {self.crons[i]} ...")
+            logger.info(f"Beat task: {self.tasks[i]} at <{self.crons[i]}> ...")
             self.futures.append(asyncio.ensure_future(self.beat(i)))
         asyncio.get_event_loop().run_until_complete(self._run())
         asyncio.get_event_loop().run_until_complete(self.oxalis.disconnect())
