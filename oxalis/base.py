@@ -65,12 +65,14 @@ class TaskCodec:
 class Oxalis(abc.ABC):
     def __init__(
         self,
+        task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
     ) -> None:
+        self.task_cls = task_cls
         self.tasks: tp.Dict[str, Task] = {}
         self.task_codec = task_codec
         self.pool = pool
@@ -132,14 +134,17 @@ class Oxalis(abc.ABC):
         if force:
             sys.exit()
 
+    def register_task(self, task: Task):
+        if task.name in self.tasks:
+            raise ValueError("double task, check task name")
+        self.tasks[task.name] = task
+
     def register(
         self, task_name: str = "", timeout: float = -1, **_
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(self, func, name=task_name, timeout=timeout)
-            if task.name in self.tasks:
-                raise ValueError("double task, check task name")
-            self.tasks[task.name] = task
+            task = self.task_cls(self, func, name=task_name, timeout=timeout)
+            self.register_task(task)
             return task
 
         return wrapped

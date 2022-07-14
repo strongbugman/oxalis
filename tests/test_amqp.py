@@ -1,13 +1,14 @@
 import asyncio
 
 import pytest
+from aio_pika import RobustConnection
 
 from oxalis.amqp import Exchange, Oxalis, Queue
 
 
 @pytest.mark.asyncio
 async def test_amqp():
-    app = Oxalis("amqp://root:letmein@rabbitmq:5672/")
+    app = Oxalis(RobustConnection("amqp://root:letmein@rabbitmq:5672/"))
     e = Exchange("test_exchange")
     q = Queue("test_queue", durable=False)
     app.register_queues([q])

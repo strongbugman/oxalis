@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import typing as tp
 
 import aio_pika
 
 from .base import Oxalis as _Oxalis
-from .base import Task, TaskCodec, logger
+from .base import Task as _Task
+from .base import TaskCodec, logger
 from .pool import Pool
 
 ExchangeType = aio_pika.ExchangeType
@@ -61,13 +64,30 @@ class Queue(aio_pika.Queue):
         self.channel = channel.channel
 
 
+class Task(_Task):
+    def __init__(
+        self,
+        oxalis: Oxalis,
+        func: tp.Callable,
+        exchange: Exchange,
+        routing_key: str,
+        name="",
+        timeout: float = -1,
+        ack_later: bool = False,
+    ) -> None:
+        super().__init__(oxalis, func, name, timeout)
+        self.exchange = exchange
+        self.routing_key = routing_key
+        self.ack_later = ack_later
+
+
 class Oxalis(_Oxalis):
-    connection: aio_pika.Connection
     channel: aio_pika.abc.AbstractChannel
 
     def __init__(
         self,
-        url: str,
+        connection: aio_pika.Connection,
+        task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
         timeout: float = 5.0,
@@ -78,49 +98,48 @@ class Oxalis(_Oxalis):
         default_routing_key="default",
     ) -> None:
         super().__init__(
+            task_cls=task_cls,
             task_codec=task_codec,
             pool=pool,
             timeout=timeout,
             worker_num=worker_num,
             test=test,
         )
-        self.url = url
+        self.connection = connection
         self.ack_later_tasks: tp.Set[str] = set()
         self.default_exchange = Exchange(default_exchange_name)
         self.default_queue = Queue(default_queue_name)
         self.default_routing_key = default_routing_key
         self.queues: tp.List[Queue] = [self.default_queue]
-        self.exchanges: tp.Dict[str, Exchange] = {}
+        self.exchanges: tp.List[Exchange] = [self.default_exchange]
         self.bindings: tp.List[tp.Tuple[Queue, Exchange, str]] = [
             (self.default_queue, self.default_exchange, self.default_routing_key)
         ]
         self.routing_keys: tp.Dict[str, str] = {}
 
     async def connect(self):
-        self.connection = await aio_pika.connect_robust(self.url, timeout=self.timeout)
+        await self.connection.connect(timeout=self.timeout)
         self.channel = self.connection.channel()
         await self.channel.initialize(timeout=self.timeout)
         await self.declare(self.queues)
-        await self.declare(self.exchanges.values())
+        await self.declare(self.exchanges)
         for q, e, k in self.bindings:
             await self.bind(q, e, k)
 
     async def disconnect(self):
         await self.connection.close()
 
-    async def send_task(self, task: Task, *task_args, **task_kwargs):
+    async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         logger.debug(f"Send task {task} to worker...")
-        exchange = self.exchanges[task.name]
-        routing_key = self.routing_keys[task.name]
-        exchange.set_channel(self.channel)
-        await exchange.publish(
+        task.exchange.set_channel(self.channel)
+        await task.exchange.publish(
             aio_pika.Message(
                 self.task_codec.encode(task, task_args, task_kwargs),
                 content_type="text/plain",
             ),
-            routing_key=routing_key,
+            routing_key=task.routing_key,
             timeout=self.timeout,
         )
 
@@ -134,14 +153,17 @@ class Oxalis(_Oxalis):
         **_,
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = Task(self, func, name=task_name, timeout=timeout)
-            if task.name in self.tasks:
-                raise ValueError("double task, check task name")
-            self.tasks[task.name] = task
-            self.exchanges[task.name] = exchange or self.default_exchange
-            self.routing_keys[task.name] = routing_key or self.default_routing_key
-            if ack_later:
-                self.ack_later_tasks.add(task.name)
+            task = self.task_cls(
+                self,
+                func,
+                exchange or self.default_exchange,
+                routing_key or self.default_routing_key,
+                name=task_name,
+                timeout=timeout,
+                ack_later=ack_later,
+            )
+            self.register_task(task)
+            self.exchanges.append(task.exchange)
             return task
 
         return wrapped
@@ -149,27 +171,33 @@ class Oxalis(_Oxalis):
     def register_queues(self, queues: tp.Sequence[Queue]):
         self.queues.extend(queues)
 
+    def register_exchanges(self, exchanges: tp.Sequence[Exchange]):
+        self.exchanges.extend(exchanges)
+
     def register_binding(self, queue: Queue, exchange: Exchange, routing_key: str = ""):
         self.bindings.append((queue, exchange, routing_key))
 
     async def declare(self, eqs: tp.Sequence[tp.Union[Queue, Exchange]]):
+        _names = set()
         for eq in eqs:
+            if eq.name in _names:
+                continue
             eq.set_channel(self.channel)
             await eq.declare(timeout=self.timeout)
+            _names.add(eq.name)
 
     async def bind(self, queue: Queue, exchange: Exchange, routing_key: str = ""):
         queue.set_channel(self.channel)
         exchange.set_channel(self.channel)
         await queue.bind(exchange, routing_key, timeout=self.timeout)
 
-    async def exec_task(self, task: Task, *args, **task_kwargs):
+    async def exec_task(self, task: Task, *args, **task_kwargs):  # type: ignore[override]
         message: aio_pika.IncomingMessage = args[0]
         task_args = args[1:]
-        ack_later = task.name in self.ack_later_tasks
-        if not ack_later:
+        if not task.ack_later:
             await message.ack()
         await super().exec_task(task, *task_args, **task_kwargs)
-        if ack_later:
+        if task.ack_later:
             await message.ack()
 
     async def _receive_message(self, queue: Queue):
