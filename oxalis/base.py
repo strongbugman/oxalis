@@ -18,7 +18,7 @@ logger = logging.getLogger("oxalis")
 
 class Task:
     def __init__(
-        self, oxalis: Oxalis, func: tp.Callable, name="", timeout: float = 10 * 60
+        self, oxalis: Oxalis, func: tp.Callable, name="", timeout: float = -1
     ) -> None:
         self.oxalis = oxalis
         self.func = func
@@ -114,6 +114,7 @@ class Oxalis(abc.ABC):
         asyncio.get_event_loop().run_until_complete(self.connect())
         self._run_worker()
         asyncio.get_event_loop().run_until_complete(self.work())
+        self.on_worker_close()
 
     @abc.abstractmethod
     def _run_worker(self):
@@ -163,4 +164,7 @@ class Oxalis(abc.ABC):
         self.close_worker(force=self._on_close_signal_count >= 2)
 
     def on_worker_init(self):
+        pass
+
+    def on_worker_close(self):
         pass

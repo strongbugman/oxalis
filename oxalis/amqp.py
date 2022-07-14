@@ -16,7 +16,7 @@ class Exchange(aio_pika.Exchange):
     def __init__(
         self,
         name: str,
-        type: tp.Union[aio_pika.ExchangeType, str] = aio_pika.ExchangeType.DIRECT,
+        type: tp.Union[ExchangeType, str] = ExchangeType.DIRECT,
         *,
         auto_delete: bool = False,
         durable: bool = False,
@@ -24,16 +24,13 @@ class Exchange(aio_pika.Exchange):
         passive: bool = False,
         arguments: aio_pika.abc.Arguments = None,
     ):
-        super().__init__(
-            None,  # type: ignore
-            self.NAME_PREFIX + name,
-            type,
-            auto_delete=auto_delete,
-            durable=durable,
-            internal=internal,
-            passive=passive,
-            arguments=arguments,
-        )
+        self._type = type.value if isinstance(type, ExchangeType) else type
+        self.name = self.NAME_PREFIX + name
+        self.auto_delete = auto_delete
+        self.durable = durable
+        self.internal = internal
+        self.passive = passive
+        self.arguments = arguments or {}
 
     def set_channel(self, channel: aio_pika.abc.AbstractChannel):
         self.channel = channel.channel
@@ -44,16 +41,21 @@ class Queue(aio_pika.Queue):
 
     def __init__(
         self,
-        name: tp.Optional[str],
-        durable: bool = False,
+        name: str,
+        durable: bool = True,
         exclusive: bool = False,
         auto_delete: bool = False,
         arguments: tp.Optional[aio_pika.abc.Arguments] = None,
         passive: bool = False,
     ):
-        super().__init__(
-            None, self.NAME_PREFIX + name, durable, exclusive, auto_delete, arguments, passive  # type: ignore
-        )
+        self.__get_lock = asyncio.Lock()
+        self.close_callbacks = aio_pika.tools.CallbackCollection(self)
+        self.name = self.NAME_PREFIX + name
+        self.durable = durable
+        self.exclusive = exclusive
+        self.auto_delete = auto_delete
+        self.arguments = arguments
+        self.passive = passive
 
     def set_channel(self, channel: aio_pika.abc.AbstractChannel):
         self.channel = channel.channel
@@ -85,14 +87,7 @@ class Oxalis(_Oxalis):
         self.url = url
         self.ack_later_tasks: tp.Set[str] = set()
         self.default_exchange = Exchange(default_exchange_name)
-        self.default_queue = Queue(
-            default_queue_name,
-            durable=True,
-            exclusive=False,
-            auto_delete=False,
-            arguments=None,
-            passive=False,
-        )
+        self.default_queue = Queue(default_queue_name)
         self.default_routing_key = default_routing_key
         self.queues: tp.List[Queue] = [self.default_queue]
         self.exchanges: tp.Dict[str, Exchange] = {}
@@ -167,9 +162,9 @@ class Oxalis(_Oxalis):
         exchange.set_channel(self.channel)
         await queue.bind(exchange, routing_key, timeout=self.timeout)
 
-    async def exec_task(self, task: Task, *task_args, **task_kwargs):
-        message = task_args[0]
-        task_args = task_args[1:]
+    async def exec_task(self, task: Task, *args, **task_kwargs):
+        message: aio_pika.IncomingMessage = args[0]
+        task_args = args[1:]
         ack_later = task.name in self.ack_later_tasks
         if not ack_later:
             await message.ack()

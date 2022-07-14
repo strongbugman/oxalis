@@ -9,7 +9,7 @@ from oxalis.amqp import Exchange, Oxalis, Queue
 async def test_amqp():
     app = Oxalis("amqp://root:letmein@rabbitmq:5672/")
     e = Exchange("test_exchange")
-    q = Queue("test_queue")
+    q = Queue("test_queue", durable=False)
     app.register_queues([q])
     app.register_binding(q, e, "test")
 
