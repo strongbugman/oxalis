@@ -181,7 +181,7 @@ class Oxalis(_Oxalis):
                     if message:
                         await self.on_message_receive(message.body, message)
                 except aio_pika.exceptions.QueueEmpty:
-                    pass
+                    await asyncio.sleep(0.1)
 
     def _run_worker(self):
         queues = []
