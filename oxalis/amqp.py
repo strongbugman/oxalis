@@ -50,6 +50,8 @@ class Queue(aio_pika.Queue):
         auto_delete: bool = False,
         arguments: tp.Optional[aio_pika.abc.Arguments] = None,
         passive: bool = False,
+        consumer_prefetch_count: int = 4,
+        consumer_prefetch_size: int = 0,
     ):
         self.__get_lock = asyncio.Lock()
         self.close_callbacks = aio_pika.tools.CallbackCollection(self)
@@ -59,6 +61,8 @@ class Queue(aio_pika.Queue):
         self.auto_delete = auto_delete
         self.arguments = arguments
         self.passive = passive
+        self.consumer_prefetch_count = consumer_prefetch_count
+        self.consumer_prefetch_size = consumer_prefetch_size
 
     def set_channel(self, channel: aio_pika.abc.AbstractChannel):
         self.channel = channel.channel
@@ -74,22 +78,24 @@ class Task(_Task):
         name="",
         timeout: float = -1,
         ack_later: bool = False,
+        reject: bool = False,
+        reject_requeue: bool = False,
     ) -> None:
         super().__init__(oxalis, func, name, timeout)
         self.exchange = exchange
         self.routing_key = routing_key
         self.ack_later = ack_later
+        self.reject = reject
+        self.reject_requeue = reject_requeue
 
 
 class Oxalis(_Oxalis):
-    channel: aio_pika.abc.AbstractChannel
-
     def __init__(
         self,
         connection: aio_pika.Connection,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(),
+        pool: Pool = Pool(limit=-1),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
@@ -105,6 +111,7 @@ class Oxalis(_Oxalis):
             worker_num=worker_num,
             test=test,
         )
+        self.pool_wait_spawn = False
         self.connection = connection
         self.ack_later_tasks: tp.Set[str] = set()
         self.default_exchange = Exchange(default_exchange_name)
@@ -116,17 +123,28 @@ class Oxalis(_Oxalis):
             (self.default_queue, self.default_exchange, self.default_routing_key)
         ]
         self.routing_keys: tp.Dict[str, str] = {}
+        self.channels: tp.List[aio_pika.abc.AbstractChannel] = []
+
+    @property
+    def channel(self) -> aio_pika.abc.AbstractChannel:
+        if not self.channels:
+            raise RuntimeError("Call connect first!")
+        return self.channels[0]
 
     async def connect(self):
         await self.connection.connect(timeout=self.timeout)
-        self.channel = self.connection.channel()
-        await self.channel.initialize(timeout=self.timeout)
+        channel = self.connection.channel()
+        await channel.initialize(timeout=self.timeout)
+        self.channels.append(channel)
         await self.declare(self.queues)
         await self.declare(self.exchanges)
         for q, e, k in self.bindings:
             await self.bind(q, e, k)
 
     async def disconnect(self):
+        await self.channel.close()
+        while not all([c.is_closed for c in self.channels]):
+            await asyncio.sleep(self.timeout)
         await self.connection.close()
 
     async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
@@ -150,6 +168,8 @@ class Oxalis(_Oxalis):
         exchange: tp.Optional[aio_pika.abc.AbstractExchange] = None,
         routing_key: str = "",
         ack_later: bool = False,
+        reject: bool = False,
+        reject_requeue: bool = False,
         **_,
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
@@ -161,12 +181,18 @@ class Oxalis(_Oxalis):
                 name=task_name,
                 timeout=timeout,
                 ack_later=ack_later,
+                reject=reject,
+                reject_requeue=reject_requeue,
             )
             self.register_task(task)
             self.exchanges.append(task.exchange)
             return task
 
         return wrapped
+
+    def on_worker_init(self):
+        super().on_worker_init()
+        self.channels.clear()
 
     def register_queues(self, queues: tp.Sequence[Queue]):
         self.queues.extend(queues)
@@ -196,20 +222,31 @@ class Oxalis(_Oxalis):
         task_args = args[1:]
         if not task.ack_later:
             await message.ack()
-        await super().exec_task(task, *task_args, **task_kwargs)
+        try:
+            await super().exec_task(task, *task_args, **task_kwargs)
+        except Exception as e:
+            if task.reject:
+                await message.reject(requeue=task.reject_requeue)
+            raise e from None
         if task.ack_later:
             await message.ack()
 
+    async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
+        await self.on_message_receive(message.body, message)
+
     async def _receive_message(self, queue: Queue):
         async with self.connection.channel() as channel:
+            self.channels.append(channel)
+            await channel.set_qos(
+                prefetch_count=queue.consumer_prefetch_count,
+                prefetch_size=queue.consumer_prefetch_size,
+                global_=True,
+            )
+            queue.set_channel(channel)
+            tag = await queue.consume(self._on_message_receive)
             while self.running:
-                queue.set_channel(channel)
-                try:
-                    message = await queue.get(timeout=self.timeout)
-                    if message:
-                        await self.on_message_receive(message.body, message)
-                except aio_pika.exceptions.QueueEmpty:
-                    await asyncio.sleep(0.1)
+                await asyncio.sleep(self.timeout)
+            await queue.cancel(tag, timeout=self.timeout)
 
     def _run_worker(self):
         queues = []

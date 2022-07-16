@@ -42,7 +42,7 @@ class Oxalis(_Oxalis):
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
-        timeout: float = 5.0,
+        timeout: float = 2.0,
         worker_num: int = 0,
         test: bool = False,
         default_queue_name: str = "default",
@@ -63,6 +63,8 @@ class Oxalis(_Oxalis):
         await self.client.initialize()
 
     async def disconnect(self):
+        while self.pubsub.connection is not None:
+            await asyncio.sleep(self.timeout)
         await self.client.close()
 
     async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
@@ -122,6 +124,7 @@ class Oxalis(_Oxalis):
                 continue
             else:
                 await self.on_message_receive(content["data"])
+        await self.pubsub.close()
 
     def _run_worker(self):
         if [t for t in self.tasks.values() if isinstance(t.queue, PubsubQueue)]:

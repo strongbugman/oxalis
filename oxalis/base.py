@@ -81,6 +81,7 @@ class Oxalis(abc.ABC):
         self.test = test
         self._on_close_signal_count = 0
         self.worker_num = worker_num or os.cpu_count()
+        self.pool_wait_spawn = True
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
@@ -125,13 +126,14 @@ class Oxalis(abc.ABC):
     async def work(self):
         while self.running:
             await asyncio.sleep(self.timeout)
-        await self.pool.close()
         await self.disconnect()
+        await self.pool.wait_close()
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")
         self.running = False
         if force:
+            self.pool.fore_close()
             sys.exit()
 
     def register_task(self, task: Task):
@@ -159,10 +161,20 @@ class Oxalis(abc.ABC):
         if task_name not in self.tasks:
             logger.warning(f"Received task {task_name} not found")
         else:
-            await self.pool.block_spawn(
-                self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
-                timeout=self.tasks[task_name].timeout,
-            )
+            if self.pool_wait_spawn:
+                await self.pool.wait_spawn(
+                    self.exec_task(
+                        self.tasks[task_name], *args, *task_args, **task_kwargs
+                    ),
+                    timeout=self.tasks[task_name].timeout,
+                )
+            else:
+                self.pool.spawn(
+                    self.exec_task(
+                        self.tasks[task_name], *args, *task_args, **task_kwargs
+                    ),
+                    timeout=self.tasks[task_name].timeout,
+                )
 
     def close(self, *_):
         self._on_close_signal_count += 1

@@ -5,7 +5,7 @@ from asyncio.queues import Queue, QueueEmpty
 
 import async_timeout
 
-logger = logging.getLogger("lotus")
+logger = logging.getLogger("oxalis_pool")
 
 
 class Pool:
@@ -17,6 +17,9 @@ class Pool:
         self.futures: tp.Set[asyncio.Future] = set()
         self.running_count = 0
         self.running = True
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__} <running_count: {self.running_count}, pending_count: {self.pending_queue.qsize()}>"
 
     def spawn(
         self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
@@ -40,7 +43,7 @@ class Pool:
 
         return True
 
-    async def block_spawn(self, coroutine: tp.Awaitable, timeout: float = -1) -> bool:
+    async def wait_spawn(self, coroutine: tp.Awaitable, timeout: float = -1) -> bool:
         while True:
             if self.spawn(coroutine, pending=False, timeout=timeout):
                 break
@@ -68,6 +71,19 @@ class Pool:
                 f.cancel()
         await self.wait_done()
 
+    async def wait_close(self):
+        logger.info(f"Close {self}...")
+        self.running = False
+        await self.wait_done()
+
+    def fore_close(self):
+        logger.info(f"Force Close {self}...")
+        self.running = False
+        while not self.pending_queue.empty():
+            self.pending_queue.get_nowait()
+        for f in self.futures:
+            f.cancel()
+
     def check_future(self, f: asyncio.Future):
         e = f.exception()
         if e:
@@ -82,7 +98,7 @@ class Pool:
         self.check_future(f)
         self.futures.remove(f)
         try:
-            if self.running and (self.limit == -1 or self.running_count < self.limit):
+            if self.limit == -1 or self.running_count < self.limit:
                 next = self.pending_queue.get_nowait()
                 self.running_count += 1
                 asyncio.ensure_future(next).add_done_callback(self.on_future_done)
