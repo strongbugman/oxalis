@@ -43,6 +43,11 @@ class Pool:
 
         return True
 
+    def ensure_future(
+        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
+    ) -> bool:
+        return self.spawn(coroutine, pending=pending, timeout=timeout)
+
     async def wait_spawn(self, coroutine: tp.Awaitable, timeout: float = -1) -> bool:
         while True:
             if self.spawn(coroutine, pending=False, timeout=timeout):
@@ -101,6 +106,8 @@ class Pool:
             if self.limit == -1 or self.running_count < self.limit:
                 next = self.pending_queue.get_nowait()
                 self.running_count += 1
-                asyncio.ensure_future(next).add_done_callback(self.on_future_done)
+                f = asyncio.ensure_future(next)
+                f.add_done_callback(self.on_future_done)
+                self.futures.add(f)
         except QueueEmpty:
             pass
