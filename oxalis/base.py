@@ -158,16 +158,18 @@ class Oxalis(abc.ABC):
 
         return wrapped
 
-    async def on_message_receive(self, content: bytes, *args) -> tp.Optional[Task]:
+    async def on_message_receive(
+        self, content: bytes, *args
+    ) -> tp.Tuple[tp.Optional[Task], bool]:
         try:
             task_name, task_args, task_kwargs = self.task_codec.decode(content)
         except Exception as e:
             logger.exception(e)
-            return None
+            return None, False
 
         if task_name not in self.tasks:
             logger.warning(f"Received task {task_name} not found")
-            return None
+            return None, False
         else:
             if self.pool_wait_spawn:
                 await self.pool.wait_spawn(
@@ -185,8 +187,8 @@ class Oxalis(abc.ABC):
                         timeout=self.tasks[task_name].timeout,
                     )
                 else:
-                    return None
-            return self.tasks[task_name]
+                    return self.tasks[task_name], False
+            return self.tasks[task_name], True
 
     def close(self, *_):
         if not self.is_worker:
