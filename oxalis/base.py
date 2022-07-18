@@ -81,11 +81,16 @@ class Oxalis(abc.ABC):
         self.test = test
         self._on_close_signal_count = 0
         self.worker_num = worker_num or os.cpu_count()
+        self.is_worker = False
+        self.pool_wait_spawn = True
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
 
     async def connect(self):
+        pass
+
+    async def wait_close(self):
         pass
 
     async def disconnect(self):
@@ -112,6 +117,7 @@ class Oxalis(abc.ABC):
     def run_worker(self):
         logger.info(f"Run worker: {self}...")
         self.running = True
+        self.is_worker = True
         self.on_worker_init()
         asyncio.get_event_loop().run_until_complete(self.connect())
         self._run_worker()
@@ -125,6 +131,8 @@ class Oxalis(abc.ABC):
     async def work(self):
         while self.running:
             await asyncio.sleep(self.timeout)
+
+        await self.wait_close()
         await self.pool.wait_close()
         await self.disconnect()
 
@@ -161,13 +169,28 @@ class Oxalis(abc.ABC):
             logger.warning(f"Received task {task_name} not found")
             return None
         else:
-            await self.pool.wait_spawn(
-                self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
-                timeout=self.tasks[task_name].timeout,
-            )
+            if self.pool_wait_spawn:
+                await self.pool.wait_spawn(
+                    self.exec_task(
+                        self.tasks[task_name], *args, *task_args, **task_kwargs
+                    ),
+                    timeout=self.tasks[task_name].timeout,
+                )
+            else:
+                if self.pool.running:
+                    self.pool.spawn(
+                        self.exec_task(
+                            self.tasks[task_name], *args, *task_args, **task_kwargs
+                        ),
+                        timeout=self.tasks[task_name].timeout,
+                    )
+                else:
+                    return None
             return self.tasks[task_name]
 
     def close(self, *_):
+        if not self.is_worker:
+            return
         self._on_close_signal_count += 1
         self.close_worker(force=self._on_close_signal_count >= 2)
 

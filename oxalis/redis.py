@@ -58,13 +58,18 @@ class Oxalis(_Oxalis):
         self.client = client
         self.pubsub = client.pubsub()
         self.default_queue = Queue(default_queue_name)
+        self._receiving = False
 
     async def connect(self):
         await self.client.initialize()
 
-    async def disconnect(self):
+    async def wait_close(self):
         while self.pubsub.connection is not None:
             await asyncio.sleep(self.timeout)
+        while self._receiving:
+            await asyncio.sleep(self.timeout)
+
+    async def disconnect(self):
         await self.client.close()
 
     async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
@@ -101,12 +106,14 @@ class Oxalis(_Oxalis):
                 if not isinstance(q, PubsubQueue)
             }
         )
+        self._receiving = True
         while self.running:
             content = await self.client.blpop(queues, timeout=self.timeout)
             if not content:
                 continue
             else:
                 await self.on_message_receive(content[1])
+        self._receiving = False
 
     async def _receive_pubsub_message(self):
         queues = {

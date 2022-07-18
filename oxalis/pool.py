@@ -69,7 +69,7 @@ class Pool:
             await self.done_queue.get()
 
     def close(self, force=False):
-        logger.info(f"Close {self} {'(force)' if force else ''} ...")
+        logger.info(f"Close {'(force)' if force else ''} {self}...")
         self.running = False
         if force:
             self.running = False
@@ -79,16 +79,11 @@ class Pool:
                 f.cancel()
 
     async def wait_close(self):
-        self.close(self)
+        self.close()
         await self.wait_done()
 
     def fore_close(self):
-        logger.info(f"Close {self} (force)...")
-        self.running = False
-        while not self.pending_queue.empty():
-            self.pending_queue.get_nowait()
-        for f in self.futures:
-            f.cancel()
+        self.close(force=True)
 
     def check_future(self, f: asyncio.Future):
         e = f.exception()
