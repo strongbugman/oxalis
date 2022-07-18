@@ -23,39 +23,38 @@ class Pool:
 
     def spawn(
         self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
-    ) -> bool:
+    ) -> tp.Optional[asyncio.Future]:
         if not self.running:
             raise RuntimeError("This pool has been closed")
 
-        timeout = timeout if timeout >= 0 else self.timeout
-        while True:
-            if self.limit == -1 or self.running_count < self.limit:
-                self.running_count += 1
-                f = asyncio.ensure_future(self.run_coroutine(coroutine, timeout))
-                f.add_done_callback(self.on_future_done)
-                self.futures.add(f)
-                break
-            elif pending:
-                self.pending_queue.put_nowait(coroutine)
-                break
-            else:
-                return False
-
-        return True
+        if self.limit == -1 or self.running_count < self.limit:
+            self.running_count += 1
+            f = asyncio.ensure_future(
+                self.run_coroutine(coroutine, timeout if timeout >= 0 else self.timeout)
+            )
+            f.add_done_callback(self.on_future_done)
+            self.futures.add(f)
+            return f
+        elif pending:
+            self.pending_queue.put_nowait(coroutine)
+            return None
+        else:
+            return None
 
     def ensure_future(
         self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
-    ) -> bool:
+    ) -> tp.Optional[asyncio.Future]:
         return self.spawn(coroutine, pending=pending, timeout=timeout)
 
-    async def wait_spawn(self, coroutine: tp.Awaitable, timeout: float = -1) -> bool:
+    async def wait_spawn(
+        self, coroutine: tp.Awaitable, timeout: float = -1
+    ) -> asyncio.Future:
         while True:
-            if self.spawn(coroutine, pending=False, timeout=timeout):
-                break
+            f = self.spawn(coroutine, pending=False, timeout=timeout)
+            if f:
+                return f
             else:
                 await self.done_queue.get()
-
-        return True
 
     async def run_coroutine(self, coroutine: tp.Awaitable, timeout: float = -1):
         async with async_timeout.timeout(timeout):
@@ -69,20 +68,22 @@ class Pool:
         while not self.done:
             await self.done_queue.get()
 
-    async def close(self, force=False):
+    def close(self, force=False):
+        logger.info(f"Close {self} {'(force)' if force else ''} ...")
         self.running = False
         if force:
+            self.running = False
+            while not self.pending_queue.empty():
+                self.pending_queue.get_nowait()
             for f in self.futures:
                 f.cancel()
-        await self.wait_done()
 
     async def wait_close(self):
-        logger.info(f"Close {self}...")
-        self.running = False
+        self.close(self)
         await self.wait_done()
 
     def fore_close(self):
-        logger.info(f"Force Close {self}...")
+        logger.info(f"Close {self} (force)...")
         self.running = False
         while not self.pending_queue.empty():
             self.pending_queue.get_nowait()

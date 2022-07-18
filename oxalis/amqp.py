@@ -95,7 +95,7 @@ class Oxalis(_Oxalis):
         connection: aio_pika.Connection,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(limit=-1),
+        pool: Pool = Pool(),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
@@ -111,9 +111,8 @@ class Oxalis(_Oxalis):
             worker_num=worker_num,
             test=test,
         )
-        self.pool_wait_spawn = False
+        self.tasks: tp.Dict[str, Task] = {}  # type: ignore
         self.connection = connection
-        self.ack_later_tasks: tp.Set[str] = set()
         self.default_exchange = Exchange(default_exchange_name)
         self.default_queue = Queue(default_queue_name)
         self.default_routing_key = default_routing_key
@@ -124,6 +123,7 @@ class Oxalis(_Oxalis):
         ]
         self.routing_keys: tp.Dict[str, str] = {}
         self.channels: tp.List[aio_pika.abc.AbstractChannel] = []
+        self.waiting_task_count = 0
 
     @property
     def channel(self) -> aio_pika.abc.AbstractChannel:
@@ -220,8 +220,6 @@ class Oxalis(_Oxalis):
     async def exec_task(self, task: Task, *args, **task_kwargs):  # type: ignore[override]
         message: aio_pika.IncomingMessage = args[0]
         task_args = args[1:]
-        if not task.ack_later:
-            await message.ack()
         try:
             await super().exec_task(task, *task_args, **task_kwargs)
         except Exception as e:
@@ -232,7 +230,11 @@ class Oxalis(_Oxalis):
             await message.ack()
 
     async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
-        await self.on_message_receive(message.body, message)
+        self.waiting_task_count += 1
+        task = await self.on_message_receive(message.body, message)
+        if task and not task.ack_later:
+            await message.ack()
+        self.waiting_task_count -= 1
 
     async def _receive_message(self, queue: Queue):
         async with self.connection.channel() as channel:
@@ -244,9 +246,13 @@ class Oxalis(_Oxalis):
             )
             queue.set_channel(channel)
             tag = await queue.consume(self._on_message_receive)
+
             while self.running:
                 await asyncio.sleep(self.timeout)
             await queue.cancel(tag, timeout=self.timeout)
+
+            while self.waiting_task_count:
+                await asyncio.sleep(self.timeout)
 
     def _run_worker(self):
         queues = []

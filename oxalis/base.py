@@ -81,7 +81,6 @@ class Oxalis(abc.ABC):
         self.test = test
         self._on_close_signal_count = 0
         self.worker_num = worker_num or os.cpu_count()
-        self.pool_wait_spawn = True
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
@@ -126,8 +125,8 @@ class Oxalis(abc.ABC):
     async def work(self):
         while self.running:
             await asyncio.sleep(self.timeout)
-        await self.disconnect()
         await self.pool.wait_close()
+        await self.disconnect()
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")
@@ -151,30 +150,22 @@ class Oxalis(abc.ABC):
 
         return wrapped
 
-    async def on_message_receive(self, content: bytes, *args):
+    async def on_message_receive(self, content: bytes, *args) -> tp.Optional[Task]:
         try:
             task_name, task_args, task_kwargs = self.task_codec.decode(content)
         except Exception as e:
             logger.exception(e)
-            return
+            return None
 
         if task_name not in self.tasks:
             logger.warning(f"Received task {task_name} not found")
+            return None
         else:
-            if self.pool_wait_spawn:
-                await self.pool.wait_spawn(
-                    self.exec_task(
-                        self.tasks[task_name], *args, *task_args, **task_kwargs
-                    ),
-                    timeout=self.tasks[task_name].timeout,
-                )
-            else:
-                self.pool.spawn(
-                    self.exec_task(
-                        self.tasks[task_name], *args, *task_args, **task_kwargs
-                    ),
-                    timeout=self.tasks[task_name].timeout,
-                )
+            await self.pool.wait_spawn(
+                self.exec_task(self.tasks[task_name], *args, *task_args, **task_kwargs),
+                timeout=self.tasks[task_name].timeout,
+            )
+            return self.tasks[task_name]
 
     def close(self, *_):
         self._on_close_signal_count += 1
