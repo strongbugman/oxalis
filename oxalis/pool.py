@@ -9,8 +9,13 @@ logger = logging.getLogger("oxalis_pool")
 
 
 class Pool:
-    def __init__(self, limit: int = 100, timeout: tp.Union[int, float] = 5 * 60):
-        self.limit = limit
+    def __init__(
+        self,
+        limit: int = 0,
+        concurrency: int = 100,
+        timeout: tp.Union[int, float] = 5 * 60,
+    ):
+        self.concurrency = limit or concurrency
         self.timeout = timeout
         self.pending_queue: Queue = Queue()
         self.done_queue: Queue = Queue()
@@ -27,7 +32,7 @@ class Pool:
         if not self.running:
             raise RuntimeError("This pool has been closed")
 
-        if self.limit == -1 or self.running_count < self.limit:
+        if self.concurrency == -1 or self.running_count < self.concurrency:
             self.running_count += 1
             f = asyncio.ensure_future(
                 self.run_coroutine(coroutine, timeout if timeout >= 0 else self.timeout)
@@ -99,7 +104,7 @@ class Pool:
         self.check_future(f)
         self.futures.remove(f)
         try:
-            if self.limit == -1 or self.running_count < self.limit:
+            if self.concurrency == -1 or self.running_count < self.concurrency:
                 next = self.pending_queue.get_nowait()
                 self.running_count += 1
                 f = asyncio.ensure_future(next)
