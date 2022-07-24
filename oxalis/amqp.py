@@ -20,6 +20,7 @@ class Exchange(aio_pika.Exchange):
         self,
         name: str,
         type: tp.Union[ExchangeType, str] = ExchangeType.DIRECT,
+        default_routing_key: str = "",
         *,
         auto_delete: bool = False,
         durable: bool = False,
@@ -34,6 +35,7 @@ class Exchange(aio_pika.Exchange):
         self.internal = internal
         self.passive = passive
         self.arguments = arguments or {}
+        self.default_routing_key = default_routing_key
 
     def set_channel(self, channel: aio_pika.abc.AbstractChannel):
         self.channel = channel.channel
@@ -109,9 +111,9 @@ class Oxalis(_Oxalis):
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
-        default_exchange=Exchange("default"),
+        default_exchange=Exchange("default", default_routing_key="default"),
         default_queue=Queue("default"),
-        default_routing_key="default",
+        default_routing_key="",
     ) -> None:
         super().__init__(
             task_cls=task_cls,
@@ -125,11 +127,16 @@ class Oxalis(_Oxalis):
         self.connection = connection
         self.default_exchange = default_exchange
         self.default_queue = default_queue
-        self.default_routing_key = default_routing_key
+        if default_routing_key:
+            self.default_exchange.default_routing_key = default_routing_key
         self.queues: tp.List[Queue] = [self.default_queue]
         self.exchanges: tp.List[Exchange] = [self.default_exchange]
         self.bindings: tp.List[tp.Tuple[Queue, Exchange, str]] = [
-            (self.default_queue, self.default_exchange, self.default_routing_key)
+            (
+                self.default_queue,
+                self.default_exchange,
+                self.default_exchange.default_routing_key,
+            )
         ]
         self.routing_keys: tp.Dict[str, str] = {}
         self.channels: tp.List[aio_pika.abc.AbstractChannel] = []
@@ -180,7 +187,7 @@ class Oxalis(_Oxalis):
         self,
         task_name: str = "",
         timeout: float = -1,
-        exchange: tp.Optional[aio_pika.abc.AbstractExchange] = None,
+        exchange: tp.Optional[Exchange] = None,
         routing_key: str = "",
         ack_later: bool = True,
         ack_always: bool = False,
@@ -188,12 +195,18 @@ class Oxalis(_Oxalis):
         reject_requeue: bool = False,
         **_,
     ) -> tp.Callable[[tp.Callable], Task]:
+        if not exchange:
+            exchange = self.default_exchange
+        if not routing_key:
+            assert exchange
+            routing_key = exchange.default_routing_key
+
         def wrapped(func):
             task = self.task_cls(
                 self,
                 func,
-                exchange or self.default_exchange,
-                routing_key or self.default_routing_key,
+                exchange,
+                routing_key,
                 name=task_name,
                 timeout=timeout,
                 ack_later=ack_later,
