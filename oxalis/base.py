@@ -105,6 +105,9 @@ class Oxalis(abc.ABC):
         await task(*task_args, **task_kwargs)
 
     def run_worker_master(self):
+        for task in self.tasks.values():
+            logger.info(f"Registered Task: {task}")
+
         signal.signal(signal.SIGINT, self.close)
         signal.signal(signal.SIGTERM, self.close)
         ps = []
