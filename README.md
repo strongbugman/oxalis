@@ -1,3 +1,9 @@
+<p>
+<a href="https://pypi.org/project/oxalis/">
+    <img src="https://badge.fury.io/py/oxalis.svg" alt="Package version">
+</a>
+</p>
+
 # Oxalis  
 
 Distributed async task/job queue, like Celery for `asyncio` world
@@ -6,6 +12,10 @@ Distributed async task/job queue, like Celery for `asyncio` world
 
 * Redis and AMQP(RabbitMQ etc.) support
 * Cron task/job beater
+
+## Install
+
+```pip install oxalis```
 
 ## Example with Redis backend
 
@@ -18,7 +28,7 @@ from oxalis.redis import Oxalis
 oxalis = Oxalis(Redis(host=os.getenv("REDIS_HOST", "redis")))
 
 @oxalis.register()
-def hello_task():
+async def hello_task():
     print("Hello oxalis")
 ```
 
@@ -150,7 +160,7 @@ class MyOxalis(Oxalis):
 
 ## Redis Backend Detail
 
-Oxalis using redis's `list` and `pubsub` as a message queue
+Oxalis use redis's `list` and `pubsub` structure as a message queue
 
 ### Queue
 
@@ -245,7 +255,7 @@ async def task2():
     print("hello oxalis")
 
 #  reject with requeue when task failed
-@oxalis.register(reject_queue=True)
+@oxalis.register(reject_requeue=True)
 async def task2():
     await asyncio.sleep(10)
     print("hello oxalis")
