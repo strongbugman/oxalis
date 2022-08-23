@@ -3,8 +3,6 @@ import logging
 import typing as tp
 from asyncio.queues import Queue, QueueEmpty
 
-import async_timeout
-
 logger = logging.getLogger("oxalis_pool")
 
 
@@ -17,7 +15,7 @@ class Pool:
     ):
         self.concurrency = limit or concurrency
         self.timeout = timeout
-        self.pending_queue: Queue = Queue()
+        self.pending_queue: Queue[tp.Tuple[tp.Awaitable, float]] = Queue()
         self.done_queue: Queue = Queue()
         self.futures: tp.Set[asyncio.Future] = set()
         self.running_count = 0
@@ -33,15 +31,9 @@ class Pool:
             raise RuntimeError("This pool has been closed")
 
         if self.concurrency == -1 or self.running_count < self.concurrency:
-            self.running_count += 1
-            f = asyncio.ensure_future(
-                self.run_coroutine(coroutine, timeout if timeout >= 0 else self.timeout)
-            )
-            f.add_done_callback(self.on_future_done)
-            self.futures.add(f)
-            return f
+            return self._ensure_future(coroutine, timeout=timeout)
         elif pending:
-            self.pending_queue.put_nowait(coroutine)
+            self.pending_queue.put_nowait((coroutine, timeout))
             return None
         else:
             return None
@@ -50,6 +42,14 @@ class Pool:
         self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
     ) -> tp.Optional[asyncio.Future]:
         return self.spawn(coroutine, pending=pending, timeout=timeout)
+
+    def _ensure_future(self, coroutine: tp.Awaitable, timeout: float):
+        timeout = self.timeout if timeout == -1 else timeout
+        self.running_count += 1
+        f = asyncio.ensure_future(asyncio.wait_for(coroutine, timeout=timeout))
+        f.add_done_callback(self.on_future_done)
+        self.futures.add(f)
+        return f
 
     async def wait_spawn(
         self, coroutine: tp.Awaitable, timeout: float = -1
@@ -60,10 +60,6 @@ class Pool:
                 return f
             else:
                 await self.done_queue.get()
-
-    async def run_coroutine(self, coroutine: tp.Awaitable, timeout: float = -1):
-        async with async_timeout.timeout(timeout):
-            await coroutine
 
     @property
     def done(self) -> bool:
@@ -105,10 +101,7 @@ class Pool:
         self.futures.remove(f)
         try:
             if self.concurrency == -1 or self.running_count < self.concurrency:
-                next = self.pending_queue.get_nowait()
-                self.running_count += 1
-                f = asyncio.ensure_future(next)
-                f.add_done_callback(self.on_future_done)
-                self.futures.add(f)
+                next, timeout = self.pending_queue.get_nowait()
+                self._ensure_future(next, timeout)
         except QueueEmpty:
             pass
