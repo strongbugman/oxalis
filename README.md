@@ -12,6 +12,7 @@ Distributed async task/job queue, like Celery for `asyncio` world
 
 * Redis and AMQP(RabbitMQ etc.) support
 * Cron task/job beater
+* Built-in coroutine pool with concurrency and time limit
 
 ## Install
 
@@ -186,6 +187,16 @@ def bus_task():
 * For task producer, the task will send to specified queue when call `task.delay()`
 * For task consumer, oxalis will listen those queues and receive task from them
 
+### Concurrency limit
+
+Oxalis using coroutine pool's concurrency limit way, we can set different concurrency limit with specified pool for one task:
+
+```python
+@oxalis.register(pool=Pool(concurrency=1))
+def custom_task():
+    print("Hello oxalis")
+```
+
 ##  AMQP Backend Detail
 
 
@@ -232,7 +243,7 @@ async def task2():
 
 ### Concurrency limit
 
-Oxalis use AMQP's QOS to limit worker concurrency(Task's `ack_later` should be true)
+Oxalis use AMQP's QOS to limit worker concurrency(Task's `ack_later` should be true), so coroutine pool's concurrency should not be limited.
 
 Custom queue QOS:
 ```python

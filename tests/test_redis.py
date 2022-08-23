@@ -4,7 +4,7 @@ import os
 import pytest
 from aioredis import Redis
 
-from oxalis.redis import Oxalis, PubsubQueue
+from oxalis.redis import Oxalis, Pool, PubsubQueue
 
 redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
 
@@ -17,19 +17,25 @@ async def _redis():
 @pytest.mark.asyncio
 async def test_redis():
     app = Oxalis(redis)
+    limit_pool = Pool(concurrency=1)
     await app.connect()
-    fanout_queue = PubsubQueue("fanout")
+    pubsub_queue = PubsubQueue("fanout")
     x = 1
     y = 1
 
-    @app.register()
-    def task():
+    @app.register(pool=limit_pool)
+    async def task():
         nonlocal x
+        await asyncio.sleep(0.1)
         x = 2
         return 1
 
-    @app.register(queue=fanout_queue)
-    def task2():
+    @app.register()
+    async def _():
+        return 1
+
+    @app.register(queue=pubsub_queue)
+    async def task2():
         nonlocal y
         y = 2
         return 1
@@ -40,7 +46,8 @@ async def test_redis():
 
     asyncio.ensure_future(close())
 
-    await app.send_task(task)
+    for _ in range(10):
+        await app.send_task(task)
     app.running = True
     app._run_worker()
     await asyncio.sleep(0.3)

@@ -18,12 +18,18 @@ logger = logging.getLogger("oxalis")
 
 class Task:
     def __init__(
-        self, oxalis: Oxalis, func: tp.Callable, name="", timeout: float = -1
+        self,
+        oxalis: Oxalis,
+        func: tp.Callable,
+        name="",
+        timeout: float = -1,
+        pool: tp.Optional[Pool] = None,
     ) -> None:
         self.oxalis = oxalis
         self.func = func
         self.name = name or self.get_name()
         self.timeout = timeout
+        self.pool = pool or oxalis.pools[0]
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.name})>"
@@ -75,7 +81,7 @@ class Oxalis(abc.ABC):
         self.task_cls = task_cls
         self.tasks: tp.Dict[str, Task] = {}
         self.task_codec = task_codec
-        self.pool = pool
+        self.pools: tp.List[Pool] = [pool]
         self.running = False
         self.timeout = timeout
         self.test = test
@@ -136,14 +142,15 @@ class Oxalis(abc.ABC):
             await asyncio.sleep(self.timeout)
 
         await self.wait_close()
-        await self.pool.wait_close()
+        await asyncio.wait([p.wait_close() for p in self.pools])
         await self.disconnect()
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")
         self.running = False
         if force:
-            self.pool.fore_close()
+            for p in self.pools:
+                p.fore_close()
             sys.exit()
 
     def register_task(self, task: Task):
@@ -152,10 +159,15 @@ class Oxalis(abc.ABC):
         self.tasks[task.name] = task
 
     def register(
-        self, task_name: str = "", timeout: float = -1, **_
+        self,
+        *,
+        task_name: str = "",
+        timeout: float = -1,
+        pool: tp.Optional[Pool] = None,
+        **_,
     ) -> tp.Callable[[tp.Callable], Task]:
         def wrapped(func):
-            task = self.task_cls(self, func, name=task_name, timeout=timeout)
+            task = self.task_cls(self, func, name=task_name, timeout=timeout, pool=pool)
             self.register_task(task)
             return task
 
@@ -174,24 +186,22 @@ class Oxalis(abc.ABC):
             logger.warning(f"Received task {task_name} not found")
             return None, False
         else:
+            task = self.tasks[task_name]
+            pool = task.pool
             if self.pool_wait_spawn:
-                await self.pool.wait_spawn(
-                    self.exec_task(
-                        self.tasks[task_name], *args, *task_args, **task_kwargs
-                    ),
-                    timeout=self.tasks[task_name].timeout,
+                await pool.wait_spawn(
+                    self.exec_task(task, *args, *task_args, **task_kwargs),
+                    timeout=task.timeout,
                 )
             else:
-                if self.pool.running:
-                    self.pool.spawn(
-                        self.exec_task(
-                            self.tasks[task_name], *args, *task_args, **task_kwargs
-                        ),
-                        timeout=self.tasks[task_name].timeout,
+                if pool.running:
+                    pool.spawn(
+                        self.exec_task(task, *args, *task_args, **task_kwargs),
+                        timeout=task.timeout,
                     )
                 else:
-                    return self.tasks[task_name], False
-            return self.tasks[task_name], True
+                    return task, False
+            return task, True
 
     def close(self, *_):
         if not self.is_worker:

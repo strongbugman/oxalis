@@ -92,7 +92,7 @@ class Task(_Task):
         self.reject = reject
         self.reject_requeue = reject_requeue
         if self.ack_always and self.reject:
-            raise ValueError("'ack_always=True' do not get alone with 'reject=True'")
+            raise ValueError("'ack_always=True' conflict with 'reject=True'")
         if not self.ack_later and self.reject:
             raise ValueError("'reject=True' must get alone with 'ack_later=True'")
         if self.ack_always and not self.ack_later:
@@ -185,6 +185,7 @@ class Oxalis(_Oxalis):
 
     def register(
         self,
+        *,
         task_name: str = "",
         timeout: float = -1,
         exchange: tp.Optional[Exchange] = None,
@@ -265,6 +266,7 @@ class Oxalis(_Oxalis):
 
     async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
         task, spawned = await self.on_message_receive(message.body, message)
+        # reject after close
         if not task:
             await message.reject()
         elif task and not spawned:
@@ -284,6 +286,9 @@ class Oxalis(_Oxalis):
         self.consumer_tags[tag] = queue
 
     def _run_worker(self):
+        """
+        Limit queue consume concurrency by AMQP's QOS config
+        """
         queues = []
         _queues = set()
         for q in self.queues:
