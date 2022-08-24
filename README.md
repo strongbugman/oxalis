@@ -11,6 +11,8 @@ Distributed async task/job queue, like Celery for `asyncio` world
 ## Feature
 
 * Redis and AMQP(RabbitMQ etc.) support
+* Task timeout and concurrency limit support
+* Delayed task(Both Redis and RabbitMQ) support
 * Cron task/job beater
 * Built-in coroutine pool with concurrency and time limit
 
@@ -57,6 +59,7 @@ import asyncio
 asyncio.get_event_loop().run_until_complete(oxalis.connect())
 for i in range(10):
     asyncio.get_event_loop().run_until_complete(hello_task.delay())
+    asyncio.get_event_loop().run_until_complete(hello_task.delay(_delay=1))  # delay execution after 1s
 ```
 
 Run cron beater:
@@ -197,6 +200,10 @@ def custom_task():
     print("Hello oxalis")
 ```
 
+### Delayed task
+
+Support by redis [zset](https://redis.com/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-4-task-queues/6-4-2-delayed-tasks/)
+
 ##  AMQP Backend Detail
 
 
@@ -271,3 +278,7 @@ async def task2():
     await asyncio.sleep(10)
     print("hello oxalis")
 ```
+
+### Delayed task
+
+Support by RabbitMq's [plugin](https://blog.rabbitmq.com/posts/2015/04/scheduling-messages-with-rabbitmq)

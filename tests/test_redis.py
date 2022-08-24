@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 
 import pytest
 from aioredis import Redis
@@ -22,6 +23,8 @@ async def test_redis():
     pubsub_queue = PubsubQueue("fanout")
     x = 1
     y = 1
+    start_ts = time.time()
+    end_ts = 0
 
     @app.register(pool=limit_pool)
     async def task():
@@ -36,7 +39,8 @@ async def test_redis():
 
     @app.register(queue=pubsub_queue)
     async def task2():
-        nonlocal y
+        nonlocal y, end_ts
+        end_ts = time.time()
         y = 2
         return 1
 
@@ -51,10 +55,13 @@ async def test_redis():
     app.running = True
     app._run_worker()
     await asyncio.sleep(0.3)
-    await app.send_task(task2)
+    start_ts = time.time()
+    await app.send_task(task2, _delay=0.5)
     await app.work()
     assert x == 2
     assert y == 2
+    assert end_ts - start_ts > 0.4
+    assert end_ts - start_ts < 0.6
 
     app.test = True
     assert await task.delay() == 1
