@@ -74,7 +74,7 @@ class Oxalis(_Oxalis):
     async def disconnect(self):
         await self.client.close()
 
-    async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay: float = 0, **task_kwargs):  # type: ignore[override]
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         logger.debug(f"Send task {task} to worker...")

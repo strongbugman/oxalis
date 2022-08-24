@@ -28,7 +28,7 @@ class Exchange(aio_pika.Exchange):
         passive: bool = False,
         arguments: aio_pika.abc.Arguments = None,
     ):
-        self._type = type.value if isinstance(type, ExchangeType) else type
+        self.type = self._type = type.value if isinstance(type, ExchangeType) else type
         self.name = self.NAME_PREFIX + name
         self.auto_delete = auto_delete
         self.durable = durable
@@ -169,15 +169,23 @@ class Oxalis(_Oxalis):
             await channel.close()
         await self.connection.close()
 
-    async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay: float = 0, _headers: tp.Optional[tp.Dict] = None, **task_kwargs):  # type: ignore[override]
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
+        headers = _headers if _headers else {}
+        if _delay:
+            if task.exchange.type != ExchangeType.X_DELAYED_MESSAGE:
+                raise ValueError(
+                    f"Task {task} with delay must go with 'x-delayed-message' exchange"
+                )
+            headers["x-delay"] = int(_delay * 1000)
         logger.debug(f"Send task {task} to worker...")
         task.exchange.set_channel(self.channel)
         await task.exchange.publish(
             aio_pika.Message(
                 self.task_codec.encode(task, task_args, task_kwargs),
                 content_type="text/plain",
+                headers=headers,
             ),
             routing_key=task.routing_key,
             timeout=self.timeout,

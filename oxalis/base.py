@@ -41,11 +41,11 @@ class Task:
 
         return ret
 
-    async def delay(self, *args, **kwargs) -> tp.Any:
+    async def delay(self, *args, _delay: float = 0, **kwargs) -> tp.Any:
         if self.oxalis.test:
             return await self(*args, **kwargs)
         else:
-            await self.oxalis.send_task(self, *args, **kwargs)
+            await self.oxalis.send_task(self, *args, _delay=_delay, **kwargs)
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -103,7 +103,13 @@ class Oxalis(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def send_task(self, task: Task, *task_args, **task_kwargs):
+    async def send_task(
+        self,
+        task: Task,
+        *task_args,
+        _delay: float = 0,
+        **task_kwargs,
+    ):
         pass
 
     async def exec_task(self, task: Task, *task_args, **task_kwargs):
