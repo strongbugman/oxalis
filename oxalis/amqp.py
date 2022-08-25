@@ -28,7 +28,7 @@ class Exchange(aio_pika.Exchange):
         passive: bool = False,
         arguments: aio_pika.abc.Arguments = None,
     ):
-        self._type = type.value if isinstance(type, ExchangeType) else type
+        self.type = self._type = type.value if isinstance(type, ExchangeType) else type
         self.name = self.NAME_PREFIX + name
         self.auto_delete = auto_delete
         self.durable = durable
@@ -92,7 +92,7 @@ class Task(_Task):
         self.reject = reject
         self.reject_requeue = reject_requeue
         if self.ack_always and self.reject:
-            raise ValueError("'ack_always=True' do not get alone with 'reject=True'")
+            raise ValueError("'ack_always=True' conflict with 'reject=True'")
         if not self.ack_later and self.reject:
             raise ValueError("'reject=True' must get alone with 'ack_later=True'")
         if self.ack_always and not self.ack_later:
@@ -169,15 +169,26 @@ class Oxalis(_Oxalis):
             await channel.close()
         await self.connection.close()
 
-    async def send_task(self, task: Task, *task_args, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay: float = 0, _priority: int = 0, _headers: tp.Optional[tp.Dict] = None, **task_kwargs):  # type: ignore[override]
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
-        logger.debug(f"Send task {task} to worker...")
+        headers = _headers if _headers else {}
+        if _delay:
+            if task.exchange.type != ExchangeType.X_DELAYED_MESSAGE:
+                raise ValueError(
+                    f"Task {task} with delay must go with 'x-delayed-message' exchange"
+                )
+            headers["x-delay"] = int(_delay * 1000)
+            logger.debug(f"Send task {task} to worker with {_delay}s delay...")
+        else:
+            logger.debug(f"Send task {task} to worker...")
         task.exchange.set_channel(self.channel)
         await task.exchange.publish(
             aio_pika.Message(
                 self.task_codec.encode(task, task_args, task_kwargs),
                 content_type="text/plain",
+                headers=headers,
+                priority=_priority,
             ),
             routing_key=task.routing_key,
             timeout=self.timeout,
@@ -185,6 +196,7 @@ class Oxalis(_Oxalis):
 
     def register(
         self,
+        *,
         task_name: str = "",
         timeout: float = -1,
         exchange: tp.Optional[Exchange] = None,
@@ -265,6 +277,7 @@ class Oxalis(_Oxalis):
 
     async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
         task, spawned = await self.on_message_receive(message.body, message)
+        # reject after close
         if not task:
             await message.reject()
         elif task and not spawned:
@@ -284,6 +297,9 @@ class Oxalis(_Oxalis):
         self.consumer_tags[tag] = queue
 
     def _run_worker(self):
+        """
+        Limit queue consume concurrency by AMQP's QOS config
+        """
         queues = []
         _queues = set()
         for q in self.queues:
