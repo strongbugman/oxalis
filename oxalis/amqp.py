@@ -179,7 +179,9 @@ class Oxalis(_Oxalis):
                     f"Task {task} with delay must go with 'x-delayed-message' exchange"
                 )
             headers["x-delay"] = int(_delay * 1000)
-        logger.debug(f"Send task {task} to worker...")
+            logger.debug(f"Send task {task} to worker with {_delay}s delay...")
+        else:
+            logger.debug(f"Send task {task} to worker...")
         task.exchange.set_channel(self.channel)
         await task.exchange.publish(
             aio_pika.Message(
