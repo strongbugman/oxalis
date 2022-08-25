@@ -169,7 +169,7 @@ class Oxalis(_Oxalis):
             await channel.close()
         await self.connection.close()
 
-    async def send_task(self, task: Task, *task_args, _delay: float = 0, _headers: tp.Optional[tp.Dict] = None, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay: float = 0, _priority: int = 0, _headers: tp.Optional[tp.Dict] = None, **task_kwargs):  # type: ignore[override]
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         headers = _headers if _headers else {}
@@ -186,6 +186,7 @@ class Oxalis(_Oxalis):
                 self.task_codec.encode(task, task_args, task_kwargs),
                 content_type="text/plain",
                 headers=headers,
+                priority=_priority,
             ),
             routing_key=task.routing_key,
             timeout=self.timeout,
