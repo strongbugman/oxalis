@@ -83,7 +83,7 @@ class Pool:
         self.close()
         await self.wait_done()
 
-    def fore_close(self):
+    def force_close(self):
         self.close(force=True)
 
     def check_future(self, f: asyncio.Future):

@@ -148,7 +148,10 @@ class Oxalis(abc.ABC):
             await asyncio.sleep(self.timeout)
 
         await self.wait_close()
-        await asyncio.wait([p.wait_close() for p in self.pools])
+        await asyncio.wait(
+            [asyncio.get_event_loop().create_task(p.wait_close()) for p in self.pools],
+            timeout=self.timeout,
+        )
         await self.disconnect()
 
     def close_worker(self, force: bool = False):
@@ -156,7 +159,7 @@ class Oxalis(abc.ABC):
         self.running = False
         if force:
             for p in self.pools:
-                p.fore_close()
+                p.force_close()
             sys.exit()
 
     def register_task(self, task: Task):

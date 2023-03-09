@@ -6,7 +6,7 @@ import typing as tp
 import uuid
 from collections import defaultdict
 
-from aioredis.client import Redis
+from redis.asyncio.client import Redis
 
 from .base import Oxalis as _Oxalis
 from .base import Task as _Task

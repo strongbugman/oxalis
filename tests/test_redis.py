@@ -3,7 +3,7 @@ import os
 import time
 
 import pytest
-from aioredis import Redis
+from redis.asyncio.client import Redis
 
 from oxalis.redis import Oxalis, Pool, PubsubQueue
 
