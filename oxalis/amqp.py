@@ -150,6 +150,9 @@ class Oxalis(_Oxalis):
         return self.channels[0]
 
     async def connect(self):
+        self.connection = self.connection.__class__(
+            self.connection.url, **self.connection.kwargs
+        )
         await self.connection.connect(timeout=self.timeout)
         channel = self.connection.channel()
         await channel.initialize(timeout=self.timeout)
