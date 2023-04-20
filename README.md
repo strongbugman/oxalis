@@ -24,7 +24,7 @@ Distributed async task/job queue, like Celery for `asyncio` world
 
 Define task:
 ```python
-from aioredis import Redis
+from redis.asyncio.client import Redis
 from oxalis.redis import Oxalis
 
 
@@ -112,7 +112,7 @@ Oxalis use one coroutine pool with concurrency limit and timeout limit to run al
 Custom pool:
 
 ```python
-from aioredis import Redis
+from redis.asyncio.client import Redis
 from oxalis.redis import Oxalis
 from oxalis.pool import Pool
 
