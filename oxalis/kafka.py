@@ -29,7 +29,7 @@ class Task(_Task):
 class Oxalis(_Oxalis):
     def __init__(
         self,
-        kafaka_url: str,
+        kafka_url: str,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(limit=-1),
@@ -51,7 +51,7 @@ class Oxalis(_Oxalis):
         self.pool_wait_spawn = True
         self.consuming = True
         self.tasks: tp.Dict[str, Task] = {}  # type: ignore
-        self.kafaka_url = kafaka_url
+        self.kafka_url = kafka_url
         self.default_topic = default_topic
         self.group = group
         self.topics = set(topics)
@@ -60,7 +60,7 @@ class Oxalis(_Oxalis):
 
     async def connect(self):
         self.producer = aiokafka.AIOKafkaProducer(
-            bootstrap_servers=self.kafaka_url,
+            bootstrap_servers=self.kafka_url,
             request_timeout_ms=int(self.timeout * 1000),
         )
         await self.producer.start()
@@ -106,7 +106,7 @@ class Oxalis(_Oxalis):
         self.consuming = True
         try:
             consumer = aiokafka.AIOKafkaConsumer(
-                *self.topics, bootstrap_servers=self.kafaka_url, group_id=self.group
+                *self.topics, bootstrap_servers=self.kafka_url, group_id=self.group
             )
             await consumer.start()
             while self.running:
