@@ -53,13 +53,14 @@ class Pool:
 
     async def wait_spawn(
         self, coroutine: tp.Awaitable, timeout: float = -1
-    ) -> asyncio.Future:
-        while True:
+    ) -> tp.Optional[asyncio.Future]:
+        while self.running:
             f = self.spawn(coroutine, pending=False, timeout=timeout)
             if f:
                 return f
             else:
                 await self.done_queue.get()
+        return None
 
     @property
     def done(self) -> bool:

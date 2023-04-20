@@ -154,26 +154,32 @@ class Oxalis(_Oxalis):
 
     async def _receive_message(self, queue_names: tp.Set[str]):
         self._receiving = True
-        while self.running:
-            content = await self.client.blpop(list(queue_names), timeout=self.timeout)
-            if not content:
-                continue
-            else:
-                await self.on_message_receive(content[1])
-        self._receiving = False
+        try:
+            while self.running:
+                content = await self.client.blpop(
+                    list(queue_names), timeout=self.timeout
+                )
+                if not content:
+                    continue
+                else:
+                    await self.on_message_receive(content[1])
+        finally:
+            self._receiving = False
 
     async def _receive_pubsub_message(self, queue_names: tp.Set[str]):
-        while self.running:
-            if not self.pubsub.subscribed:
-                await self.pubsub.subscribe(*queue_names)
-            content = await self.pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=self.timeout
-            )
-            if not content:
-                continue
-            else:
-                await self.on_message_receive(content["data"])
-        await self.pubsub.close()
+        try:
+            while self.running:
+                if not self.pubsub.subscribed:
+                    await self.pubsub.subscribe(*queue_names)
+                content = await self.pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=self.timeout
+                )
+                if not content:
+                    continue
+                else:
+                    await self.on_message_receive(content["data"])
+        finally:
+            await self.pubsub.close()
 
     def _run_worker(self):
         """

@@ -16,6 +16,9 @@ from .pool import Pool
 logger = logging.getLogger("oxalis")
 
 
+TASK_TV = tp.TypeVar("TASK_TV", bound="Task")
+
+
 class Task:
     def __init__(
         self,
@@ -158,6 +161,7 @@ class Oxalis(abc.ABC):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")
         self.running = False
         if force:
+            logger.warning(f"Force close: {self}, may lose some message!")
             for p in self.pools:
                 p.force_close()
             sys.exit()
@@ -198,21 +202,31 @@ class Oxalis(abc.ABC):
             task = self.tasks[task_name]
             pool = task.pool
             if self.pool_wait_spawn:
-                await pool.wait_spawn(
+                if await pool.wait_spawn(
                     self.exec_task(task, *args, *task_args, **task_kwargs),
                     timeout=task.timeout,
-                )
+                ):
+                    return task, True
+                else:
+                    logger.warning(
+                        f"Spawn task to closed pool, message {task} may losed"
+                    )
+                    return task, False
             else:
                 if pool.running:
                     pool.spawn(
                         self.exec_task(task, *args, *task_args, **task_kwargs),
                         timeout=task.timeout,
                     )
+                    return task, True
                 else:
+                    logger.warning(
+                        f"Spawn task to closed pool, message {task} may losed"
+                    )
                     return task, False
-            return task, True
 
     def close(self, *_):
+        """Close self but wait pool"""
         if not self.is_worker:
             return
         self._on_close_signal_count += 1
