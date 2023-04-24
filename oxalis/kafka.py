@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import typing
 import typing as tp
+from collections import defaultdict
 
 import aiokafka
 
@@ -65,10 +67,6 @@ class Oxalis(_Oxalis):
         )
         await self.producer.start()
 
-    async def wait_close(self):
-        while self.consuming:
-            await asyncio.sleep(self.timeout)
-
     async def disconnect(self):
         await self.producer.stop()
 
@@ -102,11 +100,14 @@ class Oxalis(_Oxalis):
 
         return wrapped
 
-    async def _start_consumer(self):
-        self.consuming = True
+    async def _start_consumer(self, topics: typing.List[str]):
+        self.consuming_count += 1
         try:
             consumer = aiokafka.AIOKafkaConsumer(
-                *self.topics, bootstrap_servers=self.kafka_url, group_id=self.group
+                *topics,
+                bootstrap_servers=self.kafka_url,
+                group_id=self.group,
+                enable_auto_commit=False,
             )
             await consumer.start()
             while self.running:
@@ -114,10 +115,16 @@ class Oxalis(_Oxalis):
                     msg = await asyncio.wait_for(
                         consumer.getone(), timeout=self.timeout
                     )
-                    await self.on_message_receive(msg.value)
+                    _, spowned = await self.on_message_receive(msg.value)
+                    if spowned:
+                        await consumer.commit()
             await consumer.stop()
         finally:
-            self.consuming = False
+            self.consuming_count -= 1
 
     def _run_worker(self):
-        asyncio.ensure_future(self._start_consumer())
+        topics = defaultdict(list)
+        for task in self.tasks.values():
+            topics[id(task.pool)].append(task.topic)
+        for ts in topics.values():
+            asyncio.ensure_future(self._start_consumer(ts))

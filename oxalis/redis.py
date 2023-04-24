@@ -72,8 +72,7 @@ class Oxalis(_Oxalis):
     async def wait_close(self):
         while self.pubsub.connection is not None:
             await asyncio.sleep(self.timeout)
-        while self._receiving:
-            await asyncio.sleep(self.timeout)
+        await super().wait_close()
 
     async def disconnect(self):
         await self.client.close()
@@ -153,7 +152,7 @@ class Oxalis(_Oxalis):
                 await asyncio.sleep(time_offset)
 
     async def _receive_message(self, queue_names: tp.Set[str]):
-        self._receiving = True
+        self.consuming_count += 1
         try:
             while self.running:
                 content = await self.client.blpop(
@@ -164,9 +163,10 @@ class Oxalis(_Oxalis):
                 else:
                     await self.on_message_receive(content[1])
         finally:
-            self._receiving = False
+            self.consuming_count -= 1
 
     async def _receive_pubsub_message(self, queue_names: tp.Set[str]):
+        self.consuming_count += 1
         try:
             while self.running:
                 if not self.pubsub.subscribed:
@@ -179,6 +179,7 @@ class Oxalis(_Oxalis):
                 else:
                     await self.on_message_receive(content["data"])
         finally:
+            self.consuming_count -= 1
             await self.pubsub.close()
 
     def _run_worker(self):

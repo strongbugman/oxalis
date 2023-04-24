@@ -165,7 +165,7 @@ class Oxalis(_Oxalis):
     async def wait_close(self):
         for tag, queue in self.consumer_tags.items():
             await queue.cancel(tag, timeout=self.timeout)
-        await asyncio.sleep(self.timeout)  # waiting for reject message
+        await super().wait_close()
 
     async def disconnect(self):
         for channel in self.channels:
@@ -279,12 +279,16 @@ class Oxalis(_Oxalis):
             await message.ack()
 
     async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
-        task, spawned = await self.on_message_receive(message.body, message)
-        # reject after close
-        if not task:
-            await message.reject()
-        elif task and not spawned:
-            await message.reject(requeue=True)
+        self.consuming_count += 1
+        try:
+            task, spawned = await self.on_message_receive(message.body, message)
+            # reject after close
+            if not task:
+                await message.reject()
+            elif task and not spawned:
+                await message.reject(requeue=True)
+        finally:
+            self.consuming_count -= 1
 
     async def _receive_message(self, queue: Queue):
         channel = self.connection.channel()

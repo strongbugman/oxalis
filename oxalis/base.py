@@ -92,6 +92,7 @@ class Oxalis(abc.ABC):
         self.worker_num = worker_num or os.cpu_count()
         self.is_worker = False
         self.pool_wait_spawn = True
+        self.consuming_count = 0
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
@@ -100,7 +101,8 @@ class Oxalis(abc.ABC):
         pass
 
     async def wait_close(self):
-        pass
+        while self.consuming_count:
+            await asyncio.sleep(self.timeout)
 
     async def disconnect(self):
         pass
