@@ -123,7 +123,6 @@ class Oxalis(_Oxalis):
             worker_num=worker_num,
             test=test,
         )
-        self.tasks: tp.Dict[str, Task] = {}  # type: ignore
         self.connection = connection
         self.default_exchange = default_exchange
         self.default_queue = default_queue
@@ -172,7 +171,15 @@ class Oxalis(_Oxalis):
             await channel.close()
         await self.connection.close()
 
-    async def send_task(self, task: Task, *task_args, _delay: float = 0, _priority: int = 0, _headers: tp.Optional[tp.Dict] = None, **task_kwargs):  # type: ignore[override]
+    async def send_task(
+        self,
+        task: Task,
+        *task_args,
+        _delay: float = 0,
+        _priority: int = 0,
+        _headers: tp.Optional[tp.Dict] = None,
+        **task_kwargs,
+    ):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         headers = _headers if _headers else {}
@@ -262,7 +269,7 @@ class Oxalis(_Oxalis):
         exchange.set_channel(self.channel)
         await queue.bind(exchange, routing_key, timeout=self.timeout)
 
-    async def exec_task(self, task: Task, *args, **task_kwargs):  # type: ignore[override]
+    async def exec_task(self, task: Task, *args, **task_kwargs):
         message: aio_pika.IncomingMessage = args[0]
         task_args = args[1:]
         if not task.ack_later:

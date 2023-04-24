@@ -77,7 +77,7 @@ class Oxalis(_Oxalis):
     async def disconnect(self):
         await self.client.close()
 
-    async def send_task(self, task: Task, *task_args, _delay: float = 0, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay: float = 0, **task_kwargs):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         content = self.task_codec.encode(task, task_args, task_kwargs)
@@ -142,10 +142,10 @@ class Oxalis(_Oxalis):
                             logger.warning(f"Received task {task_name} not found")
                         else:
                             task = self.tasks[task_name]
-                            if isinstance(task.queue, PubsubQueue):  # type: ignore
-                                await self.client.publish(task.queue.name, content)  # type: ignore
+                            if isinstance(task.queue, PubsubQueue):
+                                await self.client.publish(task.queue.name, content)
                             else:
-                                await self.client.rpush(task.queue.name, content)  # type: ignore
+                                await self.client.rpush(task.queue.name, content)
                     except Exception as e:
                         logger.exception(e)
             if count < fetch_count:

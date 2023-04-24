@@ -43,7 +43,7 @@ class Oxalis(_Oxalis):
         topics: tp.Sequence[str] = tuple(),
     ) -> None:
         super().__init__(
-            task_cls=task_cls,
+            task_cls,
             task_codec=task_codec,
             pool=pool,
             timeout=timeout,
@@ -52,7 +52,6 @@ class Oxalis(_Oxalis):
         )
         self.pool_wait_spawn = True
         self.consuming = True
-        self.tasks: tp.Dict[str, Task] = {}  # type: ignore
         self.kafka_url = kafka_url
         self.default_topic = default_topic
         self.group = group
@@ -70,7 +69,7 @@ class Oxalis(_Oxalis):
     async def disconnect(self):
         await self.producer.stop()
 
-    async def send_task(self, task: Task, *task_args, _delay=0, **task_kwargs):  # type: ignore[override]
+    async def send_task(self, task: Task, *task_args, _delay=0, **task_kwargs):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         logger.debug(f"Send task {task} to worker...")

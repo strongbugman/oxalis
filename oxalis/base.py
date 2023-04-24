@@ -71,10 +71,10 @@ class TaskCodec:
         return json.loads(content)
 
 
-class Oxalis(abc.ABC):
+class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
     def __init__(
         self,
-        task_cls: tp.Type[Task] = Task,
+        task_cls: tp.Type[TASK_TV],
         task_codec: TaskCodec = TaskCodec(),
         pool: Pool = Pool(),
         timeout: float = 5.0,
@@ -82,7 +82,7 @@ class Oxalis(abc.ABC):
         test: bool = False,
     ) -> None:
         self.task_cls = task_cls
-        self.tasks: tp.Dict[str, Task] = {}
+        self.tasks: tp.Dict[str, TASK_TV] = {}
         self.task_codec = task_codec
         self.pools: tp.List[Pool] = [pool]
         self.running = False
@@ -110,14 +110,14 @@ class Oxalis(abc.ABC):
     @abc.abstractmethod
     async def send_task(
         self,
-        task: Task,
+        task: TASK_TV,
         *task_args,
         _delay: float = 0,
         **task_kwargs,
     ):
         pass
 
-    async def exec_task(self, task: Task, *task_args, **task_kwargs):
+    async def exec_task(self, task: TASK_TV, *task_args, **task_kwargs):
         logger.debug(f"Worker {self} execute task {task}...")
         await task(*task_args, **task_kwargs)
 
@@ -167,7 +167,7 @@ class Oxalis(abc.ABC):
                 p.force_close()
             sys.exit()
 
-    def register_task(self, task: Task):
+    def register_task(self, task: TASK_TV):
         if task.name in self.tasks:
             raise ValueError("double task, check task name")
         self.tasks[task.name] = task
@@ -179,7 +179,7 @@ class Oxalis(abc.ABC):
         timeout: float = -1,
         pool: tp.Optional[Pool] = None,
         **_,
-    ) -> tp.Callable[[tp.Callable], Task]:
+    ) -> tp.Callable[[tp.Callable], TASK_TV]:
         def wrapped(func):
             task = self.task_cls(self, func, name=task_name, timeout=timeout, pool=pool)
             self.register_task(task)
@@ -189,7 +189,7 @@ class Oxalis(abc.ABC):
 
     async def on_message_receive(
         self, content: bytes, *args
-    ) -> tp.Tuple[tp.Optional[Task], bool]:
+    ) -> tp.Tuple[tp.Optional[TASK_TV], bool]:
         try:
             task_name, task_args, task_kwargs = self.task_codec.decode(content)
         except Exception as e:

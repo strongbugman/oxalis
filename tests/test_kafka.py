@@ -35,7 +35,7 @@ async def test_redis():
         return 1
 
     async def close():
-        await asyncio.sleep(1)
+        await asyncio.sleep(5)
         app.close_worker()
 
     asyncio.ensure_future(close())
