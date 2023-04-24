@@ -153,7 +153,6 @@ class Oxalis(abc.ABC):
         await self.wait_close()
         await asyncio.wait(
             [asyncio.get_event_loop().create_task(p.wait_close()) for p in self.pools],
-            timeout=self.timeout,
         )
         await self.disconnect()
 
