@@ -1,4 +1,5 @@
 import asyncio
+import os
 import signal
 import time
 import typing as tp
@@ -30,7 +31,11 @@ class Beater:
         self.futures[i] = asyncio.ensure_future(self.beat(i))
 
     async def _run(self):
+        with open(self.oxalis.READY_FILE_PATH, "w") as f:
+            f.write(f"{time.time():.0f}\n")
         while self.running:
+            with open(self.oxalis.HEATBEAT_FILE_PATH, "w") as f:
+                f.write(f"{time.time():.0f}\n")
             await asyncio.sleep(0.5)
 
     def close(self, *_):
@@ -49,3 +54,5 @@ class Beater:
             self.futures.append(asyncio.ensure_future(self.beat(i)))
         asyncio.get_event_loop().run_until_complete(self._run())
         asyncio.get_event_loop().run_until_complete(self.oxalis.disconnect())
+        os.remove(self.oxalis.READY_FILE_PATH)
+        os.remove(self.oxalis.HEATBEAT_FILE_PATH)

@@ -9,6 +9,7 @@ import multiprocessing
 import os
 import signal
 import sys
+import time
 import typing as tp
 
 from .pool import Pool
@@ -72,6 +73,9 @@ class TaskCodec:
 
 
 class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
+    READY_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_ready"
+    HEATBEAT_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_heatbeat"
+
     def __init__(
         self,
         task_cls: tp.Type[TASK_TV],
@@ -149,7 +153,11 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         pass
 
     async def work(self):
+        with open(self.READY_FILE_PATH, "w") as f:
+            f.write(f"{time.time():.0f}\n")
         while self.running:
+            with open(self.HEATBEAT_FILE_PATH, "w") as f:
+                f.write(f"{time.time():.0f}\n")
             await asyncio.sleep(self.timeout)
 
         await self.wait_close()
@@ -157,6 +165,8 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
             [asyncio.get_event_loop().create_task(p.wait_close()) for p in self.pools],
         )
         await self.disconnect()
+        os.remove(self.READY_FILE_PATH)
+        os.remove(self.HEATBEAT_FILE_PATH)
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")
