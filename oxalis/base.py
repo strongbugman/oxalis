@@ -74,7 +74,7 @@ class TaskCodec:
 
 class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
     READY_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_ready"
-    HEATBEAT_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_heatbeat"
+    HEATBEAT_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_heartbeat"
 
     def __init__(
         self,
