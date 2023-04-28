@@ -41,6 +41,8 @@ class Oxalis(_Oxalis):
         group="default_group",
         default_topic="default_topic",
         topics: tp.Sequence[str] = tuple(),
+        consumer_kwargs: tp.Dict[str, tp.Any] = {},
+        producer_kwargs: tp.Dict[str, tp.Any] = {},
     ) -> None:
         super().__init__(
             task_cls,
@@ -57,12 +59,15 @@ class Oxalis(_Oxalis):
         self.group = group
         self.topics = set(topics)
         self.topics.add(self.default_topic)
+        self.producer_kwargs = producer_kwargs
+        self.consumer_kwargs = consumer_kwargs
         self.producer: aiokafka.AIOKafkaConsumer
 
     async def connect(self):
         self.producer = aiokafka.AIOKafkaProducer(
             bootstrap_servers=self.kafka_url,
             request_timeout_ms=int(self.timeout * 1000),
+            **self.producer_kwargs,
         )
         await self.producer.start()
 
@@ -106,7 +111,7 @@ class Oxalis(_Oxalis):
                 *topics,
                 bootstrap_servers=self.kafka_url,
                 group_id=self.group,
-                enable_auto_commit=False,
+                **self.consumer_kwargs,
             )
             await consumer.start()
             while self.running:
@@ -115,7 +120,7 @@ class Oxalis(_Oxalis):
                         consumer.getone(), timeout=self.timeout
                     )
                     _, spowned = await self.on_message_receive(msg.value)
-                    if spowned:
+                    if spowned and not consumer._enable_auto_commit:
                         await consumer.commit()
             await consumer.stop()
         finally:

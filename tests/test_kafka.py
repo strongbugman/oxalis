@@ -9,7 +9,10 @@ from oxalis.kafka import Oxalis, Pool
 
 @pytest.mark.asyncio
 async def test_redis():
-    app = Oxalis(f"{os.getenv('KAFKA_HOST', 'kafka')}:9092")
+    app = Oxalis(
+        f"{os.getenv('KAFKA_HOST', 'kafka')}:9092",
+        consumer_kwargs={"enable_auto_commit": False},
+    )
     limit_pool = Pool(concurrency=1)
     await app.connect()
     x = 1

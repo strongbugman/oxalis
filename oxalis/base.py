@@ -74,7 +74,7 @@ class TaskCodec:
 
 class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
     READY_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_ready"
-    HEATBEAT_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_heartbeat"
+    HEARTBEAT_FILE_PATH: tp.ClassVar[str] = "/tmp/oxalis_heartbeat"
 
     def __init__(
         self,
@@ -156,7 +156,7 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         with open(self.READY_FILE_PATH, "w") as f:
             f.write(f"{time.time():.0f}\n")
         while self.running:
-            with open(self.HEATBEAT_FILE_PATH, "w") as f:
+            with open(self.HEARTBEAT_FILE_PATH, "w") as f:
                 f.write(f"{time.time():.0f}\n")
             await asyncio.sleep(self.timeout)
 
@@ -166,7 +166,7 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         )
         await self.disconnect()
         os.remove(self.READY_FILE_PATH)
-        os.remove(self.HEATBEAT_FILE_PATH)
+        os.remove(self.HEARTBEAT_FILE_PATH)
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")

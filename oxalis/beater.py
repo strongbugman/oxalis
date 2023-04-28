@@ -34,7 +34,7 @@ class Beater:
         with open(self.oxalis.READY_FILE_PATH, "w") as f:
             f.write(f"{time.time():.0f}\n")
         while self.running:
-            with open(self.oxalis.HEATBEAT_FILE_PATH, "w") as f:
+            with open(self.oxalis.HEARTBEAT_FILE_PATH, "w") as f:
                 f.write(f"{time.time():.0f}\n")
             await asyncio.sleep(0.5)
 
@@ -55,4 +55,4 @@ class Beater:
         asyncio.get_event_loop().run_until_complete(self._run())
         asyncio.get_event_loop().run_until_complete(self.oxalis.disconnect())
         os.remove(self.oxalis.READY_FILE_PATH)
-        os.remove(self.oxalis.HEATBEAT_FILE_PATH)
+        os.remove(self.oxalis.HEARTBEAT_FILE_PATH)
