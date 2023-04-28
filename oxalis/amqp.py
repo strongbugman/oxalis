@@ -54,6 +54,7 @@ class Queue(aio_pika.Queue):
         passive: bool = False,
         consumer_prefetch_count: int = 4,
         consumer_prefetch_size: int = 0,
+        global_: bool = False,
     ):
         self.__get_lock = asyncio.Lock()
         self.close_callbacks = aio_pika.tools.CallbackCollection(self)
@@ -65,6 +66,7 @@ class Queue(aio_pika.Queue):
         self.passive = passive
         self.consumer_prefetch_count = consumer_prefetch_count
         self.consumer_prefetch_size = consumer_prefetch_size
+        self.global_ = global_
 
     def set_channel(self, channel: aio_pika.abc.AbstractChannel):
         self.channel = channel.channel
@@ -304,7 +306,8 @@ class Oxalis(_Oxalis):
         await channel.set_qos(
             prefetch_count=queue.consumer_prefetch_count,
             prefetch_size=queue.consumer_prefetch_size,
-            global_=True,
+            global_=queue.global_,
+            timeout=self.timeout,
         )
         queue.set_channel(channel)
         tag = await queue.consume(self._on_message_receive)
