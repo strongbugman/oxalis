@@ -166,9 +166,9 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
             [asyncio.get_event_loop().create_task(p.wait_close()) for p in self.pools],
         )
         await self.disconnect()
-        with suppress():
+        with suppress(FileNotFoundError):
             os.remove(self.READY_FILE_PATH)
-        with suppress():
+        with suppress(FileNotFoundError):
             os.remove(self.HEARTBEAT_FILE_PATH)
 
     def close_worker(self, force: bool = False):
