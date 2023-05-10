@@ -11,6 +11,7 @@ import signal
 import sys
 import time
 import typing as tp
+from contextlib import suppress
 
 from .pool import Pool
 
@@ -165,8 +166,10 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
             [asyncio.get_event_loop().create_task(p.wait_close()) for p in self.pools],
         )
         await self.disconnect()
-        os.remove(self.READY_FILE_PATH)
-        os.remove(self.HEARTBEAT_FILE_PATH)
+        with suppress():
+            os.remove(self.READY_FILE_PATH)
+        with suppress():
+            os.remove(self.HEARTBEAT_FILE_PATH)
 
     def close_worker(self, force: bool = False):
         logger.info(f"Close worker{'(force)' if force else ''}: {self}...")

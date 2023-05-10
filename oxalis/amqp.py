@@ -84,7 +84,7 @@ class Task(_Task):
         ack_later: bool = True,
         ack_always: bool = False,
         reject: bool = True,
-        reject_requeue: bool = False,
+        reject_requeue: bool = True,
     ) -> None:
         super().__init__(oxalis, func, name, timeout)
         self.exchange = exchange
