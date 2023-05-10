@@ -5,6 +5,7 @@ import typing as tp
 
 import aio_pika
 
+from .base import PARAM, RT
 from .base import Oxalis as _Oxalis
 from .base import Task as _Task
 from .base import TaskCodec, logger
@@ -72,7 +73,7 @@ class Queue(aio_pika.Queue):
         self.channel = channel.channel
 
 
-class Task(_Task):
+class Task(_Task[PARAM, RT]):
     def __init__(
         self,
         oxalis: Oxalis,
@@ -218,7 +219,9 @@ class Oxalis(_Oxalis[Task]):
         reject: bool = True,
         reject_requeue: bool = False,
         **_,
-    ) -> tp.Callable[[tp.Callable], Task]:
+    ) -> tp.Callable[
+        [tp.Callable[PARAM, tp.Union[tp.Awaitable[RT], RT]]], Task[PARAM, RT]
+    ]:
         if not exchange:
             exchange = self.default_exchange
         if not routing_key:

@@ -8,13 +8,14 @@ from collections import defaultdict
 
 import aiokafka
 
+from .base import PARAM, RT
 from .base import Oxalis as _Oxalis
 from .base import Task as _Task
 from .base import TaskCodec, logger
 from .pool import Pool
 
 
-class Task(_Task):
+class Task(_Task[PARAM, RT]):
     def __init__(
         self,
         oxalis: Oxalis,
@@ -90,7 +91,9 @@ class Oxalis(_Oxalis[Task]):
         topic: str = "",
         pool: tp.Optional[Pool] = None,
         **_,
-    ) -> tp.Callable[[tp.Callable], Task]:
+    ) -> tp.Callable[
+        [tp.Callable[PARAM, tp.Union[tp.Awaitable[RT], RT]]], Task[PARAM, RT]
+    ]:
         if not topic:
             topic = self.default_topic
 

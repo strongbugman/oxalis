@@ -28,14 +28,12 @@ async def test_amqp():
     async def task():
         nonlocal x
         x = 2
-        return 1
 
     @app.register(queue=q, exchange=e, routing_key="test", ack_later=True)
     def task2():
         nonlocal y, end_ts
         y = 2
         end_ts = time.time()
-        return 1
 
     async def close():
         await asyncio.sleep(1)

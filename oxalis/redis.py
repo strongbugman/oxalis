@@ -8,6 +8,7 @@ from collections import defaultdict
 
 from redis.asyncio.client import Redis
 
+from .base import PARAM, RT
 from .base import Oxalis as _Oxalis
 from .base import Task as _Task
 from .base import TaskCodec, logger
@@ -25,7 +26,7 @@ class PubsubQueue(Queue):
     pass
 
 
-class Task(_Task):
+class Task(_Task[PARAM, RT]):
     def __init__(
         self,
         oxalis: Oxalis,
@@ -102,7 +103,9 @@ class Oxalis(_Oxalis[Task]):
         pool: tp.Optional[Pool] = None,
         queue: tp.Optional[Queue] = None,
         **_,
-    ) -> tp.Callable[[tp.Callable], Task]:
+    ) -> tp.Callable[
+        [tp.Callable[PARAM, tp.Union[tp.Awaitable[RT], RT]]], Task[PARAM, RT]
+    ]:
         def wrapped(func):
             task = self.task_cls(
                 self,

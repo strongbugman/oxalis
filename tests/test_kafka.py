@@ -24,18 +24,16 @@ async def test_redis():
         nonlocal x
         await asyncio.sleep(0.1)
         x = 2
-        return 1
 
     @app.register()
     async def _():
-        return 1
+        pass
 
     @app.register(topic="test_topic_2")
-    async def task2():
+    def task2():
         nonlocal y, end_ts
         end_ts = time.time()
         y = 2
-        return 1
 
     async def close():
         await asyncio.sleep(5)
@@ -54,4 +52,4 @@ async def test_redis():
     assert y == 2
 
     app.test = True
-    assert await task.delay() == 1
+    assert await task.delay() is None

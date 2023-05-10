@@ -19,13 +19,15 @@ logger = logging.getLogger("oxalis")
 
 
 TASK_TV = tp.TypeVar("TASK_TV", bound="Task")
+PARAM = tp.ParamSpec("PARAM")
+RT = tp.TypeVar("RT")
 
 
-class Task:
+class Task(tp.Generic[PARAM, RT]):
     def __init__(
         self,
         oxalis: Oxalis,
-        func: tp.Callable,
+        func: tp.Callable[PARAM, RT],
         name="",
         timeout: float = -1,
         pool: tp.Optional[Pool] = None,
@@ -35,22 +37,28 @@ class Task:
         self.name = name or self.get_name()
         self.timeout = timeout
         self.pool = pool or oxalis.pools[0]
+        self._delay: float = 0
+
+    def config(self: TASK_TV, *, delay: float) -> TASK_TV:
+        self._delay = delay
+        return self
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.name})>"
 
-    async def __call__(self, *args: tp.Any, **kwargs: tp.Any) -> tp.Any:
+    async def __call__(self, *args: PARAM.args, **kwargs: PARAM.kwargs) -> RT:
         ret = self.func(*args, **kwargs)
         if inspect.iscoroutine(ret):
             ret = await ret
 
         return ret
 
-    async def delay(self, *args, _delay: float = 0, **kwargs) -> tp.Any:
+    async def delay(self, *args: PARAM.args, **kwargs: PARAM.kwargs) -> None:
         if self.oxalis.test:
-            return await self(*args, **kwargs)
+            await self.__call__(*args, **kwargs)
         else:
-            await self.oxalis.send_task(self, *args, _delay=_delay, **kwargs)
+            await self.oxalis.send_task(self, *args, _delay=self._delay, **kwargs)
+        self._delay = 0
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -192,8 +200,10 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         timeout: float = -1,
         pool: tp.Optional[Pool] = None,
         **_,
-    ) -> tp.Callable[[tp.Callable], TASK_TV]:
-        def wrapped(func):
+    ) -> tp.Callable[
+        [tp.Callable[PARAM, tp.Union[tp.Awaitable[RT], RT]]], Task[PARAM, RT]
+    ]:
+        def wrapped(func: tp.Callable[PARAM, RT]):
             task = self.task_cls(self, func, name=task_name, timeout=timeout, pool=pool)
             self.register_task(task)
             return task
