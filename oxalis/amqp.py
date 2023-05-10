@@ -103,7 +103,7 @@ class Task(_Task):
             raise ValueError("'reject_queue=True' need 'reject=True'")
 
 
-class Oxalis(_Oxalis):
+class Oxalis(_Oxalis[Task]):
     def __init__(
         self,
         connection: aio_pika.Connection,

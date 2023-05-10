@@ -28,7 +28,7 @@ class Task(_Task):
         self.topic = topic
 
 
-class Oxalis(_Oxalis):
+class Oxalis(_Oxalis[Task]):
     def __init__(
         self,
         kafka_url: str,

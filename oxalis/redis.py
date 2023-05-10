@@ -39,7 +39,7 @@ class Task(_Task):
         self.queue = queue
 
 
-class Oxalis(_Oxalis):
+class Oxalis(_Oxalis[Task]):
     def __init__(
         self,
         client: Redis,
