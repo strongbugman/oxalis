@@ -9,11 +9,10 @@ from oxalis.kafka import Oxalis, Topic
 
 @pytest.mark.asyncio
 async def test_kafka():
-    topic = Topic(name="test1")
-    topic2 = Topic(name="test1", pause=True, enable_auto_commit=False)
+    topic = Topic(name="test1", consumer_count=1)
+    topic2 = Topic(name="test2", pause=True, enable_auto_commit=False, consumer_count=1)
     app = Oxalis(
-        f"{os.getenv('KAFKA_HOST', 'kafka')}:9092",
-        default_topic=topic,
+        f"{os.getenv('KAFKA_HOST', 'kafka')}:9092", default_topic=topic, timeout=1
     )
     await app.connect()
     x = 1
@@ -31,13 +30,14 @@ async def test_kafka():
         pass
 
     @app.register(topic=topic2)
-    def task2():
+    async def task2():
         nonlocal y, end_ts
+        await asyncio.sleep(5)
         end_ts = time.time()
         y = 2
 
     async def close():
-        await asyncio.sleep(5)
+        await asyncio.sleep(3)
         app.close_worker()
 
     asyncio.ensure_future(close())

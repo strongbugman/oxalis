@@ -183,6 +183,9 @@ class Oxalis(_Oxalis[Task]):
                     continue
                 else:
                     await self.on_message_receive(content[1])
+        except Exception as e:
+            self.health = False
+            raise e from None
         finally:
             self.consuming_count -= 1
 
@@ -199,6 +202,9 @@ class Oxalis(_Oxalis[Task]):
                     continue
                 else:
                     await self.on_message_receive(content["data"])
+        except Exception as e:
+            self.health = False
+            raise e from None
         finally:
             self.consuming_count -= 1
             await self.pubsub.close()

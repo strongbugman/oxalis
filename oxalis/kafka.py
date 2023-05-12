@@ -94,6 +94,7 @@ class Oxalis(_Oxalis[Task]):
         self.topics.add(self.default_topic)
         self.producer_kwargs = producer_kwargs
         self.producer: aiokafka.AIOKafkaProducer
+        self.consumers: tp.List[aiokafka.AIOKafkaConsumer] = []
 
     async def connect(self):
         self.producer = aiokafka.AIOKafkaProducer(
@@ -146,36 +147,41 @@ class Oxalis(_Oxalis[Task]):
 
     async def _start_consumer(self, topic: Topic):
         self.consuming_count += 1
+        consumer = aiokafka.AIOKafkaConsumer(
+            topic.name,
+            bootstrap_servers=self.kafka_url,
+            group_id=self.group,
+            enable_auto_commit=topic.enable_auto_commit,
+            **topic.consumer_kwargs,
+        )
+        self.consumers.append(consumer)
+        consumer_started = False
         try:
-            consumer = aiokafka.AIOKafkaConsumer(
-                topic.name,
-                bootstrap_servers=self.kafka_url,
-                group_id=self.group,
-                enable_auto_commit=topic.enable_auto_commit,
-                **topic.consumer_kwargs,
-            )
             await consumer.start()
+            consumer_started = True
+            await asyncio.sleep(
+                self.timeout
+            )  # wait for rebalancing when boost same topic's consumer in same time
             while self.running:
                 with contextlib.suppress(asyncio.TimeoutError):
                     msg = await asyncio.wait_for(
                         consumer.getone(), timeout=self.timeout
                     )
                     if topic.pause:
-                        for (
-                            topic_partition
-                        ) in consumer._subscription.assigned_partitions():
-                            consumer.pause(topic_partition)
+                        consumer.pause(*consumer.assignment())
                     await self.on_message_receive(msg.value)
                     if topic.pause:
-                        for (
-                            topic_partition
-                        ) in consumer._subscription.assigned_partitions():
-                            consumer.resume(topic_partition)
+                        consumer.resume(*consumer.assignment())
                     if not topic.enable_auto_commit:
                         await consumer.commit()
-            await consumer.stop()
+        except Exception as e:
+            self.health = False
+            raise e from None
         finally:
             self.consuming_count -= 1
+            if consumer_started:
+                await asyncio.sleep(self.timeout)  # wait for committing
+                await consumer.stop()
 
     def _run_worker(self):
         for t in self.topics:

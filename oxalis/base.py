@@ -106,6 +106,7 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         self.worker_num = worker_num or os.cpu_count()
         self.is_worker = False
         self.consuming_count = 0
+        self.health = True
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
@@ -168,8 +169,9 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         with open(self.READY_FILE_PATH, "w") as f:
             f.write(f"{time.time():.0f}\n")
         while self.running:
-            with open(self.HEARTBEAT_FILE_PATH, "w") as f:
-                f.write(f"{time.time():.0f}\n")
+            if self.health:
+                with open(self.HEARTBEAT_FILE_PATH, "w") as f:
+                    f.write(f"{time.time():.0f}\n")
             await asyncio.sleep(self.timeout)
 
         await self.wait_close()
