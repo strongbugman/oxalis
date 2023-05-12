@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "oxalis"
-version = "0.6.0"
+version = "0.6.1"
 description = "Distributed async task/job queue"
 authors = ["strongbugman <strongbugman@gmail.com>"]
 license = "MIT"
