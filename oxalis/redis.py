@@ -4,7 +4,6 @@ import asyncio
 import time
 import typing as tp
 import uuid
-from collections import defaultdict
 
 from redis.asyncio.client import Redis
 
@@ -14,16 +13,25 @@ from .base import Task as _Task
 from .base import TaskCodec, logger
 from .pool import Pool
 
+TASK_TV = tp.TypeVar("TASK_TV", bound="Task")
+
 
 class Queue:
     NAME_PREFIX = "oxalis_queue_"
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, consumer_count: int = 3) -> None:
         self.name = self.NAME_PREFIX + name
+        self.consumer_count = consumer_count
+
+    def __hash__(self) -> int:
+        return hash(self.name)
 
 
 class PubsubQueue(Queue):
-    pass
+    def __init__(self, name: str, consumer_count: int = 1) -> None:
+        super().__init__(name, consumer_count=consumer_count)
+        if self.consumer_count != 1:
+            raise ValueError("Wrong consumer count for pubsub queue")
 
 
 class Task(_Task[PARAM, RT]):
@@ -38,6 +46,18 @@ class Task(_Task[PARAM, RT]):
     ) -> None:
         super().__init__(oxalis, func, name, timeout, pool)
         self.queue = queue
+        self.delay_timeout: int | None = None
+
+    def config(
+        self: TASK_TV,
+        delay_timeout: int | None = None,
+        **__,
+    ) -> TASK_TV:
+        self.delay_timeout = delay_timeout
+        return self
+
+    def clean_config(self) -> None:
+        self.delay_timeout = None
 
 
 class Oxalis(_Oxalis[Task]):
@@ -78,15 +98,17 @@ class Oxalis(_Oxalis[Task]):
     async def disconnect(self):
         await self.client.close()
 
-    async def send_task(self, task: Task, *task_args, _delay: float = 0, **task_kwargs):
+    async def send_task(self, task: Task, *task_args, **task_kwargs):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
         content = self.task_codec.encode(task, task_args, task_kwargs)
-        if _delay:
-            logger.debug(f"Send task {task} to worker with {_delay}s delay...")
+        if task.delay_timeout:
+            logger.debug(
+                f"Send task {task} to worker with {task.delay_timeout}s delay..."
+            )
             await self.client.zadd(
                 self.delay_queue.name,
-                {uuid.uuid1().bytes + content: time.time() + _delay},
+                {uuid.uuid1().bytes + content: time.time() + task.delay_timeout},
             )
         else:
             logger.debug(f"Send task {task} to worker...")
@@ -100,7 +122,6 @@ class Oxalis(_Oxalis[Task]):
         *,
         task_name: str = "",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
         queue: tp.Optional[Queue] = None,
         **_,
     ) -> tp.Callable[
@@ -113,7 +134,6 @@ class Oxalis(_Oxalis[Task]):
                 queue or self.default_queue,
                 name=task_name,
                 timeout=timeout,
-                pool=pool,
             )
             self.register_task(task)
             return task
@@ -154,26 +174,27 @@ class Oxalis(_Oxalis[Task]):
             if count < fetch_count:
                 await asyncio.sleep(time_offset)
 
-    async def _receive_message(self, queue_names: tp.Set[str]):
+    async def _receive_message(self, queue: Queue):
         self.consuming_count += 1
         try:
             while self.running:
-                content = await self.client.blpop(
-                    list(queue_names), timeout=self.timeout
-                )
+                content = await self.client.blpop(queue.name, timeout=self.timeout)
                 if not content:
                     continue
                 else:
                     await self.on_message_receive(content[1])
+        except Exception as e:
+            self.health = False
+            raise e from None
         finally:
             self.consuming_count -= 1
 
-    async def _receive_pubsub_message(self, queue_names: tp.Set[str]):
+    async def _receive_pubsub_message(self, queue: Queue):
         self.consuming_count += 1
         try:
             while self.running:
                 if not self.pubsub.subscribed:
-                    await self.pubsub.subscribe(*queue_names)
+                    await self.pubsub.subscribe(queue.name)
                 content = await self.pubsub.get_message(
                     ignore_subscribe_messages=True, timeout=self.timeout
                 )
@@ -181,6 +202,9 @@ class Oxalis(_Oxalis[Task]):
                     continue
                 else:
                     await self.on_message_receive(content["data"])
+        except Exception as e:
+            self.health = False
+            raise e from None
         finally:
             self.consuming_count -= 1
             await self.pubsub.close()
@@ -189,15 +213,17 @@ class Oxalis(_Oxalis[Task]):
         """
         Limit queue consume concurrency by pool
         """
-        queue_names = defaultdict(set)
-        pubsub_queue_names = defaultdict(set)
+        queue_names = set()
+        pubsub_queue_names = set()
         for t in self.tasks.values():
             if isinstance(t.queue, PubsubQueue):
-                pubsub_queue_names[id(t.pool)].add(t.queue.name)
+                pubsub_queue_names.add(t.queue)
             else:
-                queue_names[id(t.pool)].add(t.queue.name)
-        for _, ns in queue_names.items():
-            asyncio.ensure_future(self._receive_message(ns))
-        for _, ns in pubsub_queue_names.items():
-            asyncio.ensure_future(self._receive_pubsub_message(ns))
+                queue_names.add(t.queue)
+        for queue in queue_names:
+            for _ in range(queue.consumer_count):
+                asyncio.ensure_future(self._receive_message(queue))
+        for queue in pubsub_queue_names:
+            for _ in range(queue.consumer_count):
+                asyncio.ensure_future(self._receive_pubsub_message(queue))
         asyncio.ensure_future(self._schedule_delayed_message())

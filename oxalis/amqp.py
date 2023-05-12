@@ -11,6 +11,7 @@ from .base import Task as _Task
 from .base import TaskCodec, logger
 from .pool import Pool
 
+TASK_TV = tp.TypeVar("TASK_TV", bound="Task")
 ExchangeType = aio_pika.ExchangeType
 
 
@@ -94,6 +95,8 @@ class Task(_Task[PARAM, RT]):
         self.ack_always = ack_always
         self.reject = reject
         self.reject_requeue = reject_requeue
+        self.priority: int | None = None
+        self.headers: tp.Dict[str, tp.Any] = {}
         if self.ack_always and self.reject:
             raise ValueError("'ack_always=True' conflict with 'reject=True'")
         if not self.ack_later and self.reject:
@@ -103,6 +106,17 @@ class Task(_Task[PARAM, RT]):
         if self.reject_requeue and not self.reject:
             raise ValueError("'reject_queue=True' need 'reject=True'")
 
+    def config(
+        self: TASK_TV, priority: int | None = None, **headers: tp.Any
+    ) -> TASK_TV:
+        self.priority = priority
+        self.headers = headers
+        return self
+
+    def clean_config(self) -> None:
+        self.priority = None
+        self.headers = {}
+
 
 class Oxalis(_Oxalis[Task]):
     def __init__(
@@ -110,7 +124,7 @@ class Oxalis(_Oxalis[Task]):
         connection: aio_pika.Connection,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(limit=-1),
+        pool: Pool = Pool(concurrency=-1),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
@@ -143,7 +157,10 @@ class Oxalis(_Oxalis[Task]):
         self.routing_keys: tp.Dict[str, str] = {}
         self.channels: tp.List[aio_pika.abc.AbstractChannel] = []
         self.consumer_tags: tp.Dict[aio_pika.queue.ConsumerTag, Queue] = {}
-        self.pool_wait_spawn = False
+        if self.pool.concurrency >= 0:
+            raise ValueError(
+                "pool concurrency config must be zero, task concurrency can be configured by Queue's Qos"
+            )
 
     @property
     def channel(self) -> aio_pika.abc.AbstractChannel:
@@ -178,30 +195,17 @@ class Oxalis(_Oxalis[Task]):
         self,
         task: Task,
         *task_args,
-        _delay: float = 0,
-        _priority: int = 0,
-        _headers: tp.Optional[tp.Dict] = None,
         **task_kwargs,
     ):
         if task.name not in self.tasks:
             raise ValueError(f"Task {task} not register")
-        headers = _headers if _headers else {}
-        if _delay:
-            if task.exchange.type != ExchangeType.X_DELAYED_MESSAGE:
-                raise ValueError(
-                    f"Task {task} with delay must go with 'x-delayed-message' exchange"
-                )
-            headers["x-delay"] = int(_delay * 1000)
-            logger.debug(f"Send task {task} to worker with {_delay}s delay...")
-        else:
-            logger.debug(f"Send task {task} to worker...")
         task.exchange.set_channel(self.channel)
         await task.exchange.publish(
             aio_pika.Message(
                 self.task_codec.encode(task, task_args, task_kwargs),
                 content_type="text/plain",
-                headers=headers,
-                priority=_priority,
+                headers=task.headers,
+                priority=task.priority,
             ),
             routing_key=task.routing_key,
             timeout=self.timeout,
@@ -290,15 +294,26 @@ class Oxalis(_Oxalis[Task]):
         if task.ack_later:
             await message.ack()
 
-    async def _on_message_receive(self, message: aio_pika.abc.AbstractIncomingMessage):
+    async def load_and_execute_task(self, content: bytes, *args):
+        try:
+            message = args[0]
+            task, task_args, task_kwargs = self.load_task(content)
+            if self.pool.running:
+                self.pool.spawn(
+                    self.exec_task(task, message, *task_args, **task_kwargs),
+                    timeout=task.timeout,
+                )
+            else:
+                raise RuntimeError("Task pool closed")
+        except Exception as e:
+            await message.reject(requeue=True)
+            logger.warning("message not consumed, so rejected it")
+            raise e from None
+
+    async def _on_message(self, message: aio_pika.abc.AbstractIncomingMessage):
         self.consuming_count += 1
         try:
-            task, spawned = await self.on_message_receive(message.body, message)
-            # reject after close
-            if not task:
-                await message.reject()
-            elif task and not spawned:
-                await message.reject(requeue=True)
+            await self.on_message_receive(message.body, message)
         finally:
             self.consuming_count -= 1
 
@@ -313,7 +328,7 @@ class Oxalis(_Oxalis[Task]):
             timeout=self.timeout,
         )
         queue.set_channel(channel)
-        tag = await queue.consume(self._on_message_receive)
+        tag = await queue.consume(self._on_message)
         self.consumer_tags[tag] = queue
 
     def _run_worker(self):

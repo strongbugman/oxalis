@@ -47,7 +47,7 @@ async def test_amqp():
     app.on_worker_init()
     app._run_worker()
     await asyncio.sleep(0.3)
-    await app.send_task(task2, _delay=0.5)
+    await app.send_task(task2.config(**{"x-delay": 0.5 * 1000}))
     await app.work()
     assert x == 2
     assert y == 2

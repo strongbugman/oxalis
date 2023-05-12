@@ -5,9 +5,9 @@ import time
 import pytest
 from redis.asyncio.client import Redis
 
-from oxalis.redis import Oxalis, Pool, PubsubQueue
+from oxalis.redis import Oxalis, PubsubQueue
 
-redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
+redis: Redis = Redis(host=os.getenv("REDIS_HOST", "redis"))
 
 
 @pytest.fixture(autouse=True)
@@ -18,15 +18,14 @@ async def _redis():
 @pytest.mark.asyncio
 async def test_redis():
     app = Oxalis(redis)
-    limit_pool = Pool(concurrency=1)
     await app.connect()
-    pubsub_queue = PubsubQueue("fanout")
+    pubsub_queue = PubsubQueue("fanout", consumer_count=1)
     x = 1
     y = 1
     start_ts = time.time()
     end_ts = 0
 
-    @app.register(pool=limit_pool)
+    @app.register()
     async def task():
         nonlocal x
         await asyncio.sleep(0.1)
@@ -43,7 +42,7 @@ async def test_redis():
         y = 2
 
     async def close():
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
         app.close_worker()
 
     asyncio.ensure_future(close())
@@ -54,7 +53,7 @@ async def test_redis():
     app._run_worker()
     await asyncio.sleep(0.3)
     start_ts = time.time()
-    await app.send_task(task2, _delay=0.5)
+    await app.send_task(task2.config(delay_timeout=0.5))
     await app.work()
     assert x == 2
     assert y == 2

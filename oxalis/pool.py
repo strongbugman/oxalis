@@ -11,11 +11,11 @@ class Pool:
         self,
         limit: int = 0,
         concurrency: int = 100,
-        timeout: tp.Union[int, float] = 5 * 60,
+        timeout: tp.Union[int, float, None] = 5 * 60,
     ):
         self.concurrency = limit or concurrency
         self.timeout = timeout
-        self.pending_queue: Queue[tp.Tuple[tp.Awaitable, float]] = Queue()
+        self.pending_queue: Queue[tp.Tuple[tp.Awaitable, float | None]] = Queue()
         self.done_queue: Queue = Queue()
         self.futures: tp.Set[asyncio.Future] = set()
         self.running_count = 0
@@ -25,12 +25,12 @@ class Pool:
         return f"{self.__class__.__name__} <running_count: {self.running_count}, pending_count: {self.pending_queue.qsize()}>"
 
     def spawn(
-        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
+        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float | None = -1
     ) -> tp.Optional[asyncio.Future]:
         if not self.running:
             raise RuntimeError("This pool has been closed")
 
-        if self.concurrency == -1 or self.running_count < self.concurrency:
+        if self.concurrency < 0 or self.running_count < self.concurrency:
             return self._ensure_future(coroutine, timeout=timeout)
         elif pending:
             self.pending_queue.put_nowait((coroutine, timeout))
@@ -39,11 +39,11 @@ class Pool:
             return None
 
     def ensure_future(
-        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float = -1
+        self, coroutine: tp.Awaitable, pending: bool = True, timeout: float | None = -1
     ) -> tp.Optional[asyncio.Future]:
         return self.spawn(coroutine, pending=pending, timeout=timeout)
 
-    def _ensure_future(self, coroutine: tp.Awaitable, timeout: float):
+    def _ensure_future(self, coroutine: tp.Awaitable, timeout: float | None):
         timeout = self.timeout if timeout == -1 else timeout
         self.running_count += 1
         f = asyncio.ensure_future(asyncio.wait_for(coroutine, timeout=timeout))
