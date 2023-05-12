@@ -4,22 +4,23 @@ import time
 
 import pytest
 
-from oxalis.kafka import Oxalis, Pool
+from oxalis.kafka import Oxalis, Topic
 
 
 @pytest.mark.asyncio
-async def test_redis():
+async def test_kafka():
+    topic = Topic(name="test1")
+    topic2 = Topic(name="test1", pause=True, enable_auto_commit=False)
     app = Oxalis(
         f"{os.getenv('KAFKA_HOST', 'kafka')}:9092",
-        consumer_kwargs={"enable_auto_commit": False},
+        default_topic=topic,
     )
-    limit_pool = Pool(concurrency=1)
     await app.connect()
     x = 1
     y = 1
     end_ts = 0
 
-    @app.register(pool=limit_pool)
+    @app.register()
     async def task():
         nonlocal x
         await asyncio.sleep(0.1)
@@ -29,7 +30,7 @@ async def test_redis():
     async def _():
         pass
 
-    @app.register(topic="test_topic_2")
+    @app.register(topic=topic2)
     def task2():
         nonlocal y, end_ts
         end_ts = time.time()

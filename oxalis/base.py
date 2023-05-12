@@ -37,11 +37,12 @@ class Task(tp.Generic[PARAM, RT]):
         self.name = name or self.get_name()
         self.timeout = timeout
         self.pool = pool or oxalis.pools[0]
-        self._delay: float = 0
 
-    def config(self: TASK_TV, *, delay: float) -> TASK_TV:
-        self._delay = delay
+    def config(self: TASK_TV, **__) -> TASK_TV:
         return self
+
+    def clean_config(self):
+        pass
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.name})>"
@@ -57,8 +58,8 @@ class Task(tp.Generic[PARAM, RT]):
         if self.oxalis.test:
             await self.__call__(*args, **kwargs)
         else:
-            await self.oxalis.send_task(self, *args, _delay=self._delay, **kwargs)
-        self._delay = 0
+            await self.oxalis.send_task(self, *args, **kwargs)
+        self.clean_config()
 
     def get_name(self) -> str:
         return ".".join((self.func.__module__, self.func.__name__))
@@ -104,11 +105,14 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         self._on_close_signal_count = 0
         self.worker_num = worker_num or os.cpu_count()
         self.is_worker = False
-        self.pool_wait_spawn = True
         self.consuming_count = 0
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(pid-{os.getpid()})>"
+
+    @property
+    def pool(self) -> Pool:
+        return self.pools[0]
 
     async def connect(self):
         pass
@@ -125,7 +129,6 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         self,
         task: TASK_TV,
         *task_args,
-        _delay: float = 0,
         **task_kwargs,
     ):
         pass
@@ -210,44 +213,26 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
 
         return wrapped
 
-    async def on_message_receive(
-        self, content: bytes, *args
-    ) -> tp.Tuple[tp.Optional[TASK_TV], bool]:
+    def load_task(self, content: bytes) -> tp.Tuple[TASK_TV, tp.Sequence, tp.Dict]:
+        task_name, task_args, task_kwargs = self.task_codec.decode(content)
+        if task_name not in self.tasks:
+            raise ValueError(f"task_name {task_name} not founded!")
+
+        return self.tasks[task_name], task_args, task_kwargs
+
+    async def load_and_execute_task(self, content: bytes, *_):
+        task, task_args, task_kwargs = self.load_task(content)
+        await asyncio.wait_for(
+            self.exec_task(task, *_, *task_args, **task_kwargs),
+            timeout=self.pool.timeout if task.timeout == -1 else task.timeout,
+        )
+
+    async def on_message_receive(self, content: bytes, *_):
+        """should not raise exception"""
         try:
-            task_name, task_args, task_kwargs = self.task_codec.decode(content)
+            return await self.load_and_execute_task(content, *_)
         except Exception as e:
             logger.exception(e)
-            return None, False
-
-        if task_name not in self.tasks:
-            logger.warning(f"Received task {task_name} not found")
-            return None, False
-        else:
-            task = self.tasks[task_name]
-            pool = task.pool
-            if self.pool_wait_spawn:
-                if await pool.wait_spawn(
-                    self.exec_task(task, *args, *task_args, **task_kwargs),
-                    timeout=task.timeout,
-                ):
-                    return task, True
-                else:
-                    logger.warning(
-                        f"Spawn task to closed pool, message {task} may losed"
-                    )
-                    return task, False
-            else:
-                if pool.running:
-                    pool.spawn(
-                        self.exec_task(task, *args, *task_args, **task_kwargs),
-                        timeout=task.timeout,
-                    )
-                    return task, True
-                else:
-                    logger.warning(
-                        f"Spawn task to closed pool, message {task} may losed"
-                    )
-                    return task, False
 
     def close(self, *_):
         """Close self but wait pool"""
