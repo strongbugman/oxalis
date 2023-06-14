@@ -173,15 +173,20 @@ class Oxalis(_Oxalis[Task]):
                     if topic.pause:
                         consumer.resume(*consumer.assignment())
                     if not topic.enable_auto_commit:
-                        await consumer.commit()
+                        try:
+                            await consumer.commit()
+                        except Exception as e:
+                            logger.warning(
+                                f"Topic<{topic}> Commit <{consumer.assignment()}> failed: {e}"
+                            )
         except Exception as e:
             self.health = False
             raise e from None
         finally:
-            self.consuming_count -= 1
             if consumer_started:
                 await asyncio.sleep(self.timeout)  # wait for committing
                 await consumer.stop()
+            self.consuming_count -= 1
 
     def _run_worker(self):
         for t in self.topics:
