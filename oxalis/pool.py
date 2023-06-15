@@ -92,7 +92,7 @@ class Pool:
         if e:
             try:
                 raise e
-            except Exception:
+            except BaseException:
                 logger.exception(e)
 
     def on_future_done(self, f: asyncio.Future):

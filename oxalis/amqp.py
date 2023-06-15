@@ -285,7 +285,7 @@ class Oxalis(_Oxalis[Task]):
             await message.ack()
         try:
             await super().exec_task(task, *task_args, **task_kwargs)
-        except Exception as e:
+        except BaseException as e:
             if task.reject:
                 await message.reject(requeue=task.reject_requeue)
             elif task.ack_always and task.ack_later:

@@ -233,7 +233,7 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         """should not raise exception"""
         try:
             return await self.load_and_execute_task(content, *_)
-        except Exception as e:
+        except BaseException as e:
             logger.exception(e)
 
     def close(self, *_):
