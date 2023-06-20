@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import typing as tp
 
 import aiokafka
@@ -22,10 +21,12 @@ class Topic:
         consumer_count: int = 3,
         pause: bool = False,
         enable_auto_commit: bool = True,
+        batch_count: int = 1,
         **consumer_kwargs: tp.Any,
     ) -> None:
         self.name = name
         self.consumer_count = consumer_count
+        self.batch_count = batch_count
         self.pause = pause
         self.enable_auto_commit = enable_auto_commit
         self.consumer_kwargs = consumer_kwargs
@@ -145,6 +146,50 @@ class Oxalis(_Oxalis[Task]):
 
         return wrapped
 
+    async def _consume(self, message: aiokafka.ConsumerRecord):
+        await self.on_message_receive(message.value)
+        return message
+
+    async def _batch_consume(
+        self,
+        topic: Topic,
+        consumer: aiokafka.AIOKafkaConsumer,
+        messages: tp.List[aiokafka.ConsumerRecord],
+    ):
+        offsets = sorted([msg.offset for msg in messages])
+        assert offsets
+        consumed_offsets = set()
+        committed_offsets: tp.Set[int] = set()
+        offset_index = 0
+        for cor in asyncio.as_completed(
+            [self._consume(message) for message in messages]
+        ):
+            msg: aiokafka.ConsumerRecord = await cor
+            consumed_offsets.add(msg.offset)
+            # commit minimum consumed message offset
+            if not topic.enable_auto_commit:
+                while (
+                    offset_index < len(offsets)
+                    and offsets[offset_index] in consumed_offsets
+                ):
+                    offset_index += 1
+                offset_index = offset_index - 1
+                if offset_index < 0:
+                    continue
+
+                offset = offsets[offset_index]
+                if offset in committed_offsets:
+                    continue
+                try:
+                    await consumer.commit(
+                        {aiokafka.TopicPartition(msg.topic, msg.partition): offset + 1}
+                    )
+                    committed_offsets.add(offset)
+                except Exception as e:
+                    logger.warning(
+                        f"Topic<{msg.topic}> commit offset<{offset}> failed: {e}"
+                    )
+
     async def _start_consumer(self, topic: Topic):
         self.consuming_count += 1
         consumer = aiokafka.AIOKafkaConsumer(
@@ -154,7 +199,9 @@ class Oxalis(_Oxalis[Task]):
             enable_auto_commit=topic.enable_auto_commit,
             **topic.consumer_kwargs,
         )
+        pool = Pool(concurrency=-1, timeout=None)
         self.consumers.append(consumer)
+        self.pools.append(pool)
         consumer_started = False
         try:
             await consumer.start()
@@ -163,22 +210,24 @@ class Oxalis(_Oxalis[Task]):
                 self.timeout
             )  # wait for rebalancing when boost same topic's consumer in same time
             while self.running:
-                with contextlib.suppress(asyncio.TimeoutError):
-                    msg = await asyncio.wait_for(
-                        consumer.getone(), timeout=self.timeout
-                    )
-                    if topic.pause:
-                        consumer.pause(*consumer.assignment())
-                    await self.on_message_receive(msg.value)
-                    if topic.pause:
+                data = await consumer.getmany(
+                    max_records=topic.batch_count, timeout_ms=self.timeout * 100
+                )
+                if not data:
+                    if pool.done and topic.pause:
                         consumer.resume(*consumer.assignment())
-                    if not topic.enable_auto_commit:
-                        try:
-                            await consumer.commit()
-                        except Exception as e:
-                            logger.warning(
-                                f"Topic<{topic}> Commit <{consumer.assignment()}> failed: {e}"
-                            )
+                else:
+                    cors = [
+                        self._batch_consume(topic, consumer, msgs)
+                        for _, msgs in data.items()
+                    ]
+                    if topic.pause:
+                        assert pool.done  # in case
+                        consumer.pause(*consumer.assignment())
+                        for cor in cors:
+                            pool.spawn(cor)
+                    else:
+                        await asyncio.wait([asyncio.ensure_future(cor) for cor in cors])
         except Exception as e:
             self.health = False
             raise e from None
