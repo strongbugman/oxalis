@@ -26,8 +26,12 @@ class Beater:
     async def beat(self, i: int):
         t = self.croniteres[i].get_next() - time.time()
         await asyncio.sleep(t)
-        await self.tasks[i].delay()
-        logger.info(f"Beat task {self.tasks[i]}")
+        try:
+            await self.tasks[i].delay()
+            logger.info(f"Beat task {self.tasks[i]}")
+        except Exception as e:
+            logger.warning(f"Beat task {self.tasks[i]} failed:")
+            logger.exception(e)
         self.futures[i] = asyncio.ensure_future(self.beat(i))
 
     async def _run(self):
