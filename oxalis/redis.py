@@ -42,9 +42,8 @@ class Task(_Task[PARAM, RT]):
         queue: Queue,
         name="",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
     ) -> None:
-        super().__init__(oxalis, func, name, timeout, pool)
+        super().__init__(oxalis, func, name, timeout)
         self.queue = queue
         self.delay_timeout: int | None = None
 
@@ -66,7 +65,7 @@ class Oxalis(_Oxalis[Task]):
         client: Redis,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(),
+        pool: Pool = Pool(name="default", concurrency=10),
         timeout: float = 2.0,
         worker_num: int = 0,
         test: bool = False,
@@ -175,6 +174,8 @@ class Oxalis(_Oxalis[Task]):
                 await asyncio.sleep(time_offset)
 
     async def _receive_message(self, queue: Queue):
+        pool = Pool(name=queue.name, concurrency=queue.consumer_count)
+        self.pools.append(pool)
         self.consuming_count += 1
         try:
             while self.running:
@@ -182,7 +183,7 @@ class Oxalis(_Oxalis[Task]):
                 if not content:
                     continue
                 else:
-                    await self.on_message_receive(content[1])
+                    await pool.wait_spawn(self.on_message_receive(content[1]))
         except Exception as e:
             self.health = False
             raise e from None
@@ -190,6 +191,8 @@ class Oxalis(_Oxalis[Task]):
             self.consuming_count -= 1
 
     async def _receive_pubsub_message(self, queue: Queue):
+        pool = Pool(name=queue.name, concurrency=queue.consumer_count)
+        self.pools.append(pool)
         self.consuming_count += 1
         try:
             while self.running:
@@ -201,7 +204,7 @@ class Oxalis(_Oxalis[Task]):
                 if not content:
                     continue
                 else:
-                    await self.on_message_receive(content["data"])
+                    await pool.wait_spawn(self.on_message_receive(content["data"]))
         except Exception as e:
             self.health = False
             raise e from None
@@ -221,9 +224,7 @@ class Oxalis(_Oxalis[Task]):
             else:
                 queue_names.add(t.queue)
         for queue in queue_names:
-            for _ in range(queue.consumer_count):
-                asyncio.ensure_future(self._receive_message(queue))
+            asyncio.ensure_future(self._receive_message(queue))
         for queue in pubsub_queue_names:
-            for _ in range(queue.consumer_count):
-                asyncio.ensure_future(self._receive_pubsub_message(queue))
+            asyncio.ensure_future(self._receive_pubsub_message(queue))
         asyncio.ensure_future(self._schedule_delayed_message())

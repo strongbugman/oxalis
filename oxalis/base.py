@@ -8,7 +8,6 @@ import logging
 import multiprocessing
 import os
 import signal
-import sys
 import time
 import typing as tp
 from contextlib import suppress
@@ -30,13 +29,11 @@ class Task(tp.Generic[PARAM, RT]):
         func: tp.Callable[PARAM, RT],
         name="",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
     ) -> None:
         self.oxalis = oxalis
         self.func = func
         self.name = name or self.get_name()
         self.timeout = timeout
-        self.pool = pool or oxalis.pools[0]
 
     def config(self: TASK_TV, **__) -> TASK_TV:
         return self
@@ -191,7 +188,6 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
             logger.warning(f"Force close: {self}, may lose some message!")
             for p in self.pools:
                 p.force_close()
-            sys.exit()
 
     def register_task(self, task: TASK_TV):
         if task.name in self.tasks:
@@ -203,13 +199,12 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
         *,
         task_name: str = "",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
         **_,
     ) -> tp.Callable[
         [tp.Callable[PARAM, tp.Union[tp.Awaitable[RT], RT]]], Task[PARAM, RT]
     ]:
         def wrapped(func: tp.Callable[PARAM, RT]):
-            task = self.task_cls(self, func, name=task_name, timeout=timeout, pool=pool)
+            task = self.task_cls(self, func, name=task_name, timeout=timeout)
             self.register_task(task)
             return task
 
