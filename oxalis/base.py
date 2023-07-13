@@ -8,7 +8,6 @@ import logging
 import multiprocessing
 import os
 import signal
-import sys
 import time
 import typing as tp
 from contextlib import suppress
@@ -191,7 +190,6 @@ class Oxalis(abc.ABC, tp.Generic[TASK_TV]):
             logger.warning(f"Force close: {self}, may lose some message!")
             for p in self.pools:
                 p.force_close()
-            sys.exit()
 
     def register_task(self, task: TASK_TV):
         if task.name in self.tasks:

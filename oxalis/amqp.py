@@ -124,7 +124,7 @@ class Oxalis(_Oxalis[Task]):
         connection: aio_pika.Connection,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(concurrency=-1),
+        pool: Pool = Pool(name="default", concurrency=-1),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,

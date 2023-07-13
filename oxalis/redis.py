@@ -66,7 +66,7 @@ class Oxalis(_Oxalis[Task]):
         client: Redis,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(),
+        pool: Pool = Pool(name="default", concurrency=10),
         timeout: float = 2.0,
         worker_num: int = 0,
         test: bool = False,
@@ -182,7 +182,7 @@ class Oxalis(_Oxalis[Task]):
                 if not content:
                     continue
                 else:
-                    await self.on_message_receive(content[1])
+                    await self.pool.wait_spawn(self.on_message_receive(content[1]))
         except Exception as e:
             self.health = False
             raise e from None
@@ -201,7 +201,7 @@ class Oxalis(_Oxalis[Task]):
                 if not content:
                     continue
                 else:
-                    await self.on_message_receive(content["data"])
+                    await self.pool.wait_spawn(self.on_message_receive(content["data"]))
         except Exception as e:
             self.health = False
             raise e from None
