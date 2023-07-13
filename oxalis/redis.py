@@ -42,9 +42,8 @@ class Task(_Task[PARAM, RT]):
         queue: Queue,
         name="",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
     ) -> None:
-        super().__init__(oxalis, func, name, timeout, pool)
+        super().__init__(oxalis, func, name, timeout)
         self.queue = queue
         self.delay_timeout: int | None = None
 

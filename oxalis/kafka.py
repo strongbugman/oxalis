@@ -43,9 +43,8 @@ class Task(_Task[PARAM, RT]):
         topic: Topic,
         name: str = "",
         timeout: float = -1,
-        pool: tp.Optional[Pool] = None,
     ) -> None:
-        super().__init__(oxalis, func, name, timeout, pool)
+        super().__init__(oxalis, func, name, timeout)
         self.topic = topic
         self.key: bytes | None = None
         self.partition: int | None = None
