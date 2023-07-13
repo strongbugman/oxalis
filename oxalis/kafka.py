@@ -107,6 +107,8 @@ class Oxalis(_Oxalis[Task]):
 
     async def disconnect(self):
         await self.producer.stop()
+        for consumer in self.consumers:
+            await consumer.stop()
 
     async def send_task(self, task: Task, *task_args, **task_kwargs):
         if task.name not in self.tasks:
@@ -234,7 +236,7 @@ class Oxalis(_Oxalis[Task]):
         finally:
             if consumer_started:
                 await asyncio.sleep(self.timeout)  # wait for committing
-                await consumer.stop()
+                consumer.pause(*consumer.assignment())
             self.consuming_count -= 1
 
     def _run_worker(self):
