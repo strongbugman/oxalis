@@ -9,10 +9,12 @@ logger = logging.getLogger("oxalis_pool")
 class Pool:
     def __init__(
         self,
+        name: str = "",
         limit: int = 0,
         concurrency: int = 100,
         timeout: tp.Union[int, float, None] = 5 * 60,
     ):
+        self.name = name
         self.concurrency = limit or concurrency
         self.timeout = timeout
         self.pending_queue: Queue[tp.Tuple[tp.Awaitable, float | None]] = Queue()
@@ -22,7 +24,7 @@ class Pool:
         self.running = True
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__} <running_count: {self.running_count}, pending_count: {self.pending_queue.qsize()}>"
+        return f"{self.__class__.__name__}-{self.name} <running_count: {self.running_count}, pending_count: {self.pending_queue.qsize()}>"
 
     def spawn(
         self, coroutine: tp.Awaitable, pending: bool = True, timeout: float | None = -1
