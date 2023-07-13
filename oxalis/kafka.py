@@ -71,7 +71,7 @@ class Oxalis(_Oxalis[Task]):
         kafka_url: str,
         task_cls: tp.Type[Task] = Task,
         task_codec: TaskCodec = TaskCodec(),
-        pool: Pool = Pool(limit=-1),
+        pool: Pool = Pool(name="default", limit=-1),
         timeout: float = 5.0,
         worker_num: int = 0,
         test: bool = False,
@@ -201,7 +201,7 @@ class Oxalis(_Oxalis[Task]):
             enable_auto_commit=topic.enable_auto_commit,
             **topic.consumer_kwargs,
         )
-        pool = Pool(concurrency=-1, timeout=None)
+        pool = Pool(name=topic.name, concurrency=-1, timeout=None)
         self.consumers.append(consumer)
         self.pools.append(pool)
         consumer_started = False
@@ -226,10 +226,10 @@ class Oxalis(_Oxalis[Task]):
                     if topic.pause:
                         assert pool.done  # in case
                         consumer.pause(*consumer.assignment())
-                        for cor in cors:
-                            pool.spawn(cor)
-                    else:
-                        await asyncio.wait([asyncio.ensure_future(cor) for cor in cors])
+                    for cor in cors:
+                        pool.spawn(cor)
+                    if not topic.pause:
+                        await pool.wait_done()
         except Exception as e:
             self.health = False
             raise e from None
